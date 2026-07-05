@@ -2,8 +2,7 @@
 /*
  * Copyright (c) 2019 MediaTek Inc.
  */
-bat_gm30: battery {
-	compatible = "mediatek,bat_gm30";
+&mtk_gauge {
 	DIFFERENCE_FULLOCV_ITH = <(256)>;
 /*	Charging termination current*/
 	SHUTDOWN_1_TIME = <(30)>;
