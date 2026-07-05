@@ -47,6 +47,7 @@
 *.tar
 *.usyms
 *.xz
+*.zip
 *.zst
 Module.symvers
 modules.order
@@ -67,6 +68,9 @@ modules.order
 /modules.builtin
 /modules.builtin.modinfo
 /modules.nsdeps
+/build-logs/
+/dist/
+/kernel/build-logs/
 
 #
 # RPM spec file (make rpm-pkg)
