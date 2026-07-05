@@ -2,13 +2,21 @@
 #!/bin/bash
 
 export ROOT_DIR=$(readlink -f $PWD)
-export BUILD_CONFIG=${BUILD_CONFIG:-build.config}
 KERNEL_VERSION_NUM=${DEVICE_MODULES_DIR##kernel_device_modules-}
 KERNEL_VERSION=kernel-${KERNEL_VERSION_NUM}
+DEFAULT_BUILD_CONFIG=build.config
+DEVICE_MODULES_BUILD_CONFIG=${DEVICE_MODULES_DIR}/build.config.mtk_kernel_device_modules
+
+if [ -z "${BUILD_CONFIG}" ] && [ ! -f "${ROOT_DIR}/${DEFAULT_BUILD_CONFIG}" ] && [ -f "${ROOT_DIR}/${DEVICE_MODULES_BUILD_CONFIG}" ]; then
+  export BUILD_CONFIG=${DEVICE_MODULES_BUILD_CONFIG}
+else
+  export BUILD_CONFIG=${BUILD_CONFIG:-${DEFAULT_BUILD_CONFIG}}
+fi
 
 echo ROOT_DIR: ${ROOT_DIR}
 echo DEVICE_MODULES_DIR: ${DEVICE_MODULES_DIR}
 echo KERNEL_VERSION: ${KERNEL_VERSION}
+echo BUILD_CONFIG: ${BUILD_CONFIG}
 
 set -a
 . ${ROOT_DIR}/${BUILD_CONFIG}
