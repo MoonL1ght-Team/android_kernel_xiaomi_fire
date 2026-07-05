@@ -332,3 +332,9 @@ config CHARGER_SGM41516D
 	  Set to Yes if SGM41516D is used.
 
 source "$(KCONFIG_EXT_PREFIX)drivers/power/supply/ufcs/Kconfig"
+
+config CHARGER_SYV690
+	tristate "SYV690 charger driver"
+	depends on I2C
+	help
+	  Say Y or M here to enable the SYV690 charger driver used on fire/mt6768.

@@ -114,6 +114,7 @@ _fire_extra_module_outs = [
     "drivers/dma-buf/heaps/mtk_sec_heap.ko",
     "drivers/dma-buf/heaps/system_heap.ko",
     "drivers/gpu/drm/mediatek/mtk_sync/mtk_sync.ko",
+    "drivers/power/supply/syv690.ko",
 ]
 
 define_mgk(

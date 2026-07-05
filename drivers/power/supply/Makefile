@@ -72,3 +72,4 @@ obj-$(CONFIG_UFCS_CLASS)	+= ufcs/
 
 obj-$(CONFIG_CHARGER_BQ2589X)	+= bq2589x_charger.o
 obj-$(CONFIG_CHARGER_BQ25601) += bq25601.o
+obj-$(CONFIG_CHARGER_SYV690)	+= syv690.o
