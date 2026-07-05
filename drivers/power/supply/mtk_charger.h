@@ -742,6 +742,15 @@ struct mtk_charger {
 #endif
 /* TN End modified by xinjun.lu/860715 20240710 CR/EKLAMU-202 */
 
+#if IS_ENABLED(CONFIG_OEM_TINNO_CHARGER) || IS_ENABLED(CONFIG_OEM_HVDCP_ALGO)
+	int ext_chr_type;
+	bool restart_hvdcp_work;
+	int aicl_final_ic;
+	bool is_hvdcp_detecting;
+	ktime_t hvdcp_boost_done_time;
+	ktime_t hvdcp_plug_in_time;
+#endif
+
 /* TN Begin modified by hao.jia/809321 20240628 CR/EKLAMU-202 */
 #if IS_ENABLED(CONFIG_OEM_TURBO_CHARGER)
 	struct ffc_bat_zone *ffc_zones;
@@ -759,7 +768,6 @@ struct mtk_charger {
 	bool enable_charger;
 	int disable_thermal_current_limit;
 	struct power_supply  *qc_phy_psy;
-	int ext_chr_type;
 	bool battery_protection_mode;
 	bool is_over_bpm_max_soc;
 	bool demo_mode_limit;
@@ -767,11 +775,6 @@ struct mtk_charger {
 	int ignore_current_check_time;
 	int charge_full_soc_for_over_temp;
 	bool aicl_check;
-	bool restart_hvdcp_work;
-	int aicl_final_ic;
-	bool is_hvdcp_detecting;
-	ktime_t hvdcp_boost_done_time;
-	ktime_t hvdcp_plug_in_time;
 #endif /* CONFIG_OEM_TINNO_CHARGER */
 /* TN End modified by hao.jia/809321 20240924 CR/EKLAMU-202 */
 	//struct pe50_charger_cfg pe50;

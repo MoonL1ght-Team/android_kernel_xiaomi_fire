@@ -5099,7 +5099,9 @@ static int mtk_charger_plug_in(struct mtk_charger *info,
 	info->batpro_done = false;
 	smart_charging(info);
 	chr_err("mtk_is_charger_on plug in, type:%d\n", chr_type);
+#if IS_ENABLED(CONFIG_OEM_TINNO_CHARGER) || IS_ENABLED(CONFIG_OEM_HVDCP_ALGO)
 	info->hvdcp_plug_in_time = ktime_get_boottime();
+#endif
 
 	vbat = get_battery_voltage(info);
 

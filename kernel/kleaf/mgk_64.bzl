@@ -1736,6 +1736,15 @@ def get_overlay_modules_list():
         mgk_64_common_userdebug_modules.remove("drivers/firmware/arm_ffa/ffa-module.ko")
         mgk_64_common_user_modules.remove("drivers/firmware/arm_ffa/ffa-module.ko")
         mgk_64_device_modules.remove("drivers/misc/mediatek/pkvm_tmem/pkvm_tmem.ko")
+        for module in [
+            "drivers/misc/mediatek/scp/rv/scp.ko",
+            "drivers/tee/gud/610/MobiCoreDriver/mcDrvModule.ko",
+            "drivers/tee/gud/610/MobiCoreDriver/mcDrvModule-ffa.ko",
+            "drivers/tee/gud/610/TlcTui/t-base-tui.ko",
+            "drivers/tee/teei/510/isee.ko",
+        ]:
+            if module in mgk_64_device_modules:
+                mgk_64_device_modules.remove(module)
         mgk_64_device_modules.append("drivers/tee/gud/600/MobiCoreDriver/mcDrvModule.ko")
         mgk_64_device_modules.append("drivers/tee/gud/600/MobiCoreDriver/mcDrvModule-ffa.ko")
         mgk_64_device_modules.append("drivers/tee/gud/600/TlcTui/t-base-tui.ko")
