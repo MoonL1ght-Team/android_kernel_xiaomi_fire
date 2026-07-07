@@ -37,8 +37,13 @@ AK3_TEMPLATE=${AK3_TEMPLATE:-/home/deb/kernel-4.19/out/fire/AnyKernel3}
 DIST_DIR=${DIST_DIR:-${REPO_ROOT}/dist/ak3}
 STAGE_BASE=${STAGE_BASE:-${OUT_DIR}/fire-ak3-stage}
 MKDTIMG=${MKDTIMG:-${KERNEL_ROOT}/prebuilts/kernel-build-tools/linux-x86/bin/mkdtimg}
+MKBOOTIMG=${MKBOOTIMG:-$(command -v mkbootimg || true)}
 CPP=${CPP:-$(command -v cpp || true)}
 DTC=${DTC:-$(command -v dtc || true)}
+VENDOR_BOOT_PAGESIZE=${VENDOR_BOOT_PAGESIZE:-2048}
+VENDOR_BOOT_BASE=${VENDOR_BOOT_BASE:-0x40000000}
+VENDOR_BOOT_DTB_OFFSET=${VENDOR_BOOT_DTB_OFFSET:-0x0bc80000}
+VENDOR_BOOT_MAX_BYTES=${VENDOR_BOOT_MAX_BYTES:-67108864}
 
 need_tool rsync
 need_tool zip
@@ -46,7 +51,9 @@ need_tool unzip
 need_tool modinfo
 [ -n "$CPP" ] || die "cpp is required"
 [ -n "$DTC" ] || die "dtc is required"
+[ -n "$MKBOOTIMG" ] || die "mkbootimg is required"
 [ -x "$MKDTIMG" ] || die "mkdtimg not found: $MKDTIMG"
+[ -x "$MKBOOTIMG" ] || die "mkbootimg not executable: $MKBOOTIMG"
 [ -d "$AK3_TEMPLATE" ] || die "AK3 template not found: $AK3_TEMPLATE"
 [ -d "$KERNEL_SRC" ] || die "kernel source not found: $KERNEL_SRC"
 [ -d "$DEVICE_MODULES_SRC" ] || die "device module source not found: $DEVICE_MODULES_SRC"
@@ -124,6 +131,21 @@ build_dtb mt6768 mt6768.dtb
 "$MKDTIMG" create "${DT_OUT}/dtbo.img" --page_size=2048 "${DT_OUT}/fire.dtbo" \
 	> "${DT_OUT}/mkdtimg.log" 2>&1
 
+echo "==> Building Fire vendor_boot"
+: > "${DT_OUT}/empty-vendor-ramdisk"
+"$MKBOOTIMG" \
+	--header_version 3 \
+	--pagesize "$VENDOR_BOOT_PAGESIZE" \
+	--base "$VENDOR_BOOT_BASE" \
+	--dtb_offset "$VENDOR_BOOT_DTB_OFFSET" \
+	--vendor_ramdisk "${DT_OUT}/empty-vendor-ramdisk" \
+	--dtb "${DT_OUT}/mt6768.dtb" \
+	--vendor_boot "${DT_OUT}/vendor_boot.img" \
+	> "${DT_OUT}/mkbootimg-vendor_boot.log" 2>&1
+vendor_boot_size=$(stat -c %s "${DT_OUT}/vendor_boot.img")
+[ "$vendor_boot_size" -le "$VENDOR_BOOT_MAX_BYTES" ] || \
+	die "vendor_boot.img is larger than ${VENDOR_BOOT_MAX_BYTES} bytes"
+
 echo "==> Staging AnyKernel3"
 rsync -a --delete --exclude='.git' "${AK3_TEMPLATE}/" "${STAGE}/"
 find "$STAGE" -maxdepth 1 -type f \( \
@@ -138,6 +160,7 @@ mkdir -p "$MOD_DST"
 cp -f "$IMAGE" "${STAGE}/Image.lz4"
 cp -f "${DT_OUT}/mt6768.dtb" "${STAGE}/dtb"
 cp -f "${DT_OUT}/dtbo.img" "${STAGE}/dtbo.img"
+cp -f "${DT_OUT}/vendor_boot.img" "${STAGE}/vendor_boot.img"
 
 declare -a module_order=()
 declare -A module_source=()
@@ -338,14 +361,26 @@ IS_SLOT_DEVICE=1;
 RAMDISK_COMPRESSION=auto;
 PATCH_VBMETA_FLAG=auto;
 
-# Keep the boot-v2 dtb in boot.img even on devices that expose an empty
-# vendor_boot partition.
+# The current Fire boot chain uses boot header v2 with dtb in boot.img, while
+# the device also exposes empty vendor_boot_a/b partitions. Keep the boot dtb
+# path for first-flash compatibility and flash a generated vendor_boot.img when
+# the partition exists.
 touch vendor_v3_setup;
 
 . tools/ak3-core.sh;
 
 ak_is_mounted() {
 	mount | grep -q " $1 ";
+}
+
+ak_partition_exists() {
+	part=$1;
+	for path in /dev/block/mapper /dev/block/by-name /dev/block/bootdevice/by-name; do
+		if [ -e "$path/${part}${SLOT}" ] || [ -e "$path/${part}" ]; then
+			return 0;
+		fi;
+	done;
+	return 1;
 }
 
 install_vendor_modules() {
@@ -413,6 +448,7 @@ MODULE_EOF
 
 dump_boot;
 install_vendor_modules;
+ak_partition_exists vendor_boot || rm -f vendor_boot.img;
 write_boot;
 AK3_EOF
 chmod 755 "${STAGE}/anykernel.sh"
