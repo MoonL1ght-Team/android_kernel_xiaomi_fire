@@ -60,6 +60,7 @@ if [ "$SKIP_AK3" != 1 ]; then
 	[ -d "$AK3_TEMPLATE" ] || die "AK3 template not found: $AK3_TEMPLATE"
 fi
 need_tool modinfo
+need_tool gzip
 [ -n "$CPP" ] || die "cpp is required"
 [ -n "$DTC" ] || die "dtc is required"
 [ -n "$MKBOOTIMG" ] || die "mkbootimg is required"
@@ -87,6 +88,13 @@ if [ -z "$IMAGE" ]; then
 fi
 [ -n "$IMAGE" ] || die "Image.lz4 was not found under $DEVICE_BIN"
 
+BOOT_IMAGE_GZ=$(
+	first_file \
+		"${DEVICE_BIN}/${PROJECT}_kernel_aarch64.${MODE}/Image.gz" \
+		"${DEVICE_BIN}/${PROJECT}.${MODE}_kbuild_mixed_tree/Image.gz" \
+	|| true
+)
+
 CONFIG_OUT=$(
 	for candidate in \
 		"${DEVICE_BIN}/${PROJECT}.${MODE}_config/out_dir" \
@@ -108,6 +116,23 @@ ZIP_PATH="${DIST_DIR}/MoonLightKernel-fire-GKI-6.6-AK3-${STAMP}.zip"
 
 rm -rf "$WORK_DIR"
 mkdir -p "$STAGE" "$DT_OUT" "$MOD_DST" "$DIST_DIR"
+
+if [ -z "$BOOT_IMAGE_GZ" ]; then
+	BOOT_IMAGE_GZ="${DT_OUT}/Image.gz"
+	case "$IMAGE" in
+		*.lz4)
+			need_tool lz4
+			lz4 -dc "$IMAGE" | gzip -n -9 > "$BOOT_IMAGE_GZ"
+		;;
+		*.gz)
+			cp -f "$IMAGE" "$BOOT_IMAGE_GZ"
+		;;
+		*)
+			gzip -n -9 < "$IMAGE" > "$BOOT_IMAGE_GZ"
+		;;
+	esac
+fi
+gzip -t "$BOOT_IMAGE_GZ" || die "boot kernel gzip validation failed: $BOOT_IMAGE_GZ"
 
 echo "==> Building Fire dtb/dtbo"
 dt_include_args=(
@@ -253,7 +278,7 @@ fi
 rm -rf "${STAGE}/modules"
 mkdir -p "$MOD_DST"
 if [ "$SKIP_AK3" != 1 ]; then
-	cp -f "$IMAGE" "${STAGE}/Image.lz4"
+	cp -f "$BOOT_IMAGE_GZ" "${STAGE}/Image.gz"
 	cp -f "${DT_OUT}/mt6768.dtb" "${STAGE}/dtb"
 	if [ "$AK3_FLASH_DTBO" = 1 ]; then
 		cp -f "${DT_OUT}/dtbo.img" "${STAGE}/dtbo.img"
@@ -418,7 +443,12 @@ generate_module_metadata
 echo "==> Exporting ROM artifacts"
 rm -rf "$ROM_ARTIFACTS_DIR"
 mkdir -p "${ROM_ARTIFACTS_DIR}/modules/vendor/lib/modules"
-cp -f "$IMAGE" "${ROM_ARTIFACTS_DIR}/Image.lz4"
+cp -f "$BOOT_IMAGE_GZ" "${ROM_ARTIFACTS_DIR}/Image.gz"
+case "$(basename "$IMAGE")" in
+	Image.lz4|Image)
+		cp -f "$IMAGE" "${ROM_ARTIFACTS_DIR}/$(basename "$IMAGE")"
+	;;
+esac
 cp -f "${DT_OUT}/mt6768.dtb" "${ROM_ARTIFACTS_DIR}/dtb"
 cp -f "${DT_OUT}/dtbo.img" "${ROM_ARTIFACTS_DIR}/dtbo.img"
 cp -f "${DT_OUT}/vendor_boot.img" "${ROM_ARTIFACTS_DIR}/vendor_boot.img"
