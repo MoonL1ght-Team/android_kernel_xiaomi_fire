@@ -480,6 +480,8 @@ touch vendor_v3_setup;
 
 . tools/ak3-core.sh;
 
+FIRE66_BOOT_CMDLINE="root=/dev/ram firmware_class.path=/vendor/firmware";
+
 ak_is_mounted() {
 	mount | grep -q " $1 ";
 }
@@ -517,6 +519,43 @@ assert_boot_dtbo_pair() {
 	if [ -f dtbo.img ] && [ ! -f dtb ]; then
 		abort "dtbo.img is present without matching boot dtb. Aborting to avoid LK overlay crash...";
 	fi;
+}
+
+normalize_fire66_boot_cmdline() {
+	cmd="$FIRE66_BOOT_CMDLINE";
+	[ -n "$cmd" ] || abort "Fire 6.6 boot cmdline is empty. Aborting...";
+
+	if [ -f "$SPLITIMG/cmdline.txt" ]; then
+		old_cmd=$(cat "$SPLITIMG/cmdline.txt" 2>/dev/null);
+		printf '%s\n' "$cmd" > "$SPLITIMG/cmdline.txt" ||
+			abort "Writing normalized boot cmdline failed. Aborting...";
+	elif [ -f "$SPLITIMG/header" ]; then
+		old_cmd=$(grep '^cmdline=' "$SPLITIMG/header" 2>/dev/null | head -n 1 | cut -d= -f2-);
+		tmp="$SPLITIMG/header.fire66";
+		awk -v c="$cmd" '
+			BEGIN { done = 0 }
+			/^cmdline=/ {
+				print "cmdline=" c;
+				done = 1;
+				next;
+			}
+			{ print }
+			END {
+				if (!done)
+					print "cmdline=" c;
+			}
+		' "$SPLITIMG/header" > "$tmp" &&
+			mv "$tmp" "$SPLITIMG/header" ||
+			abort "Writing normalized boot header failed. Aborting...";
+	else
+		old_cmd="";
+		printf '%s\n' "$cmd" > "$SPLITIMG/cmdline.txt" ||
+			abort "Writing normalized boot cmdline failed. Aborting...";
+	fi;
+
+	old_len=$(printf '%s' "$old_cmd" | wc -c);
+	new_len=$(printf '%s' "$cmd" | wc -c);
+	ui_print " " "Boot cmdline normalized (${old_len}->${new_len} bytes).";
 }
 
 install_vendor_modules() {
@@ -590,6 +629,7 @@ MODULE_EOF
 }
 
 dump_boot;
+normalize_fire66_boot_cmdline;
 assert_boot_dtbo_pair;
 install_vendor_modules;
 ak_partition_exists vendor_boot || rm -f vendor_boot.img;
