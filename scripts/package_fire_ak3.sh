@@ -43,6 +43,7 @@ CPP=${CPP:-$(command -v cpp || true)}
 DTC=${DTC:-$(command -v dtc || true)}
 AK3_FLASH_DTBO=${AK3_FLASH_DTBO:-0}
 AK3_FLASH_VENDOR_BOOT=${AK3_FLASH_VENDOR_BOOT:-0}
+LEGACY_DTBO_COMPAT=${LEGACY_DTBO_COMPAT:-${AK3_TEMPLATE}/dtbo.img}
 SKIP_AK3=${SKIP_AK3:-0}
 VENDOR_BOOT_PAGESIZE=${VENDOR_BOOT_PAGESIZE:-2048}
 VENDOR_BOOT_BASE=${VENDOR_BOOT_BASE:-0x40000000}
@@ -175,9 +176,32 @@ validate_overlay_symbols() {
 	done
 }
 
+extract_first_dtbo_entry() {
+	local image=$1
+	local out=$2
+	local dump offset size
+
+	dump=$("$MKDTIMG" dump "$image" 2>/dev/null || true)
+	if printf '%s\n' "$dump" | grep -q 'dt_table_header:'; then
+		offset=$(printf '%s\n' "$dump" |
+			awk '/dt_table_entry\[0\]/{entry = 1} entry && /dt_offset =/{print $3; exit}')
+		size=$(printf '%s\n' "$dump" |
+			awk '/dt_table_entry\[0\]/{entry = 1} entry && /dt_size =/{print $3; exit}')
+		[ -n "$offset" ] && [ -n "$size" ] || die "cannot parse first dtbo entry from $image"
+		dd if="$image" of="$out" bs=1 skip="$offset" count="$size" status=none
+	else
+		cp -f "$image" "$out"
+	fi
+}
+
 build_dtb fire fire.dtbo
 build_dtb mt6768 mt6768.dtb
-validate_overlay_symbols "${DT_OUT}/mt6768.dtb" "${DT_OUT}/fire.dtbo"
+compat_overlays=("${DT_OUT}/fire.dtbo")
+if [ -f "$LEGACY_DTBO_COMPAT" ]; then
+	extract_first_dtbo_entry "$LEGACY_DTBO_COMPAT" "${DT_OUT}/legacy-fire.dtbo"
+	compat_overlays+=("${DT_OUT}/legacy-fire.dtbo")
+fi
+validate_overlay_symbols "${DT_OUT}/mt6768.dtb" "${compat_overlays[@]}"
 "$MKDTIMG" create "${DT_OUT}/dtbo.img" --page_size=2048 "${DT_OUT}/fire.dtbo" \
 	> "${DT_OUT}/mkdtimg.log" 2>&1
 
