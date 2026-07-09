@@ -132,8 +132,52 @@ build_dtb() {
 		2> "${DT_OUT}/${name}.dtc.log"
 }
 
+extract_dts_block_names() {
+	local block=$1
+	local dts=$2
+
+	awk -v block="$block" '
+		$0 ~ "^[[:space:]]*" block "[[:space:]]*\\{" { inside = 1; next }
+		inside && /^[[:space:]]*};/ { inside = 0; next }
+		inside && /^[[:space:]]*[A-Za-z0-9_]+[[:space:]]*=/ {
+			name = $1
+			sub(/[[:space:]]*=.*/, "", name)
+			print name
+		}
+	' "$dts"
+}
+
+validate_overlay_symbols() {
+	local base_dtb=$1
+	shift
+	local overlay base_dts overlay_dts base_symbols overlay_fixups missing
+
+	base_dts="${DT_OUT}/$(basename "$base_dtb").dts"
+	base_symbols="${DT_OUT}/base-symbols.txt"
+	"$DTC" -I dtb -O dts -s "$base_dtb" \
+		> "$base_dts" \
+		2> "${base_dts}.dtc.log"
+	extract_dts_block_names "__symbols__" "$base_dts" | sort -u > "$base_symbols"
+	[ -s "$base_symbols" ] || die "$(basename "$base_dtb") has no __symbols__; LK overlay fixups would fail"
+
+	for overlay in "$@"; do
+		overlay_dts="${DT_OUT}/$(basename "$overlay").dts"
+		overlay_fixups="${DT_OUT}/$(basename "$overlay").fixups"
+		"$DTC" -I dtb -O dts -s "$overlay" \
+			> "$overlay_dts" \
+			2> "${overlay_dts}.dtc.log"
+		extract_dts_block_names "__fixups__" "$overlay_dts" | sort -u > "$overlay_fixups"
+		[ -s "$overlay_fixups" ] || continue
+
+		missing=$(comm -23 "$overlay_fixups" "$base_symbols" | tr '\n' ' ')
+		[ -z "$missing" ] || \
+			die "$(basename "$overlay") references symbols missing from $(basename "$base_dtb"): ${missing}"
+	done
+}
+
 build_dtb fire fire.dtbo
 build_dtb mt6768 mt6768.dtb
+validate_overlay_symbols "${DT_OUT}/mt6768.dtb" "${DT_OUT}/fire.dtbo"
 "$MKDTIMG" create "${DT_OUT}/dtbo.img" --page_size=2048 "${DT_OUT}/fire.dtbo" \
 	> "${DT_OUT}/mkdtimg.log" 2>&1
 
@@ -407,6 +451,12 @@ ak_partition_exists() {
 	return 1;
 }
 
+assert_boot_dtbo_pair() {
+	if [ -f dtbo.img ] && [ ! -f dtb ]; then
+		abort "dtbo.img is present without matching boot dtb. Aborting to avoid LK overlay crash...";
+	fi;
+}
+
 install_vendor_modules() {
 	src=$AKHOME/modules/system/vendor/lib/modules;
 	dst=/vendor/lib/modules;
@@ -471,6 +521,7 @@ MODULE_EOF
 }
 
 dump_boot;
+assert_boot_dtbo_pair;
 install_vendor_modules;
 ak_partition_exists vendor_boot || rm -f vendor_boot.img;
 write_boot;
