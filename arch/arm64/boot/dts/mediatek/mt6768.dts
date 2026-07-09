@@ -4850,6 +4850,12 @@ transparent_hugepage=never";
 		};
 	};
 
+	flashlights_aw3641e: flashlights_aw3641e {
+		compatible = "awinic,aw3641e";
+		flash-en-gpio = <&pio 8 0>;
+		flash-sel-gpio = <&pio 107 0>;
+	};
+
 	/* add flashlight */
 	flashlights_aw36515: flashlights_aw36515 {
 		compatible = "mediatek,flashlights_aw36515";
