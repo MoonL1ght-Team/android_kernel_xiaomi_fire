@@ -41,10 +41,12 @@ MKDTIMG=${MKDTIMG:-${KERNEL_ROOT}/prebuilts/kernel-build-tools/linux-x86/bin/mkd
 MKBOOTIMG=${MKBOOTIMG:-$(command -v mkbootimg || true)}
 CPP=${CPP:-$(command -v cpp || true)}
 DTC=${DTC:-$(command -v dtc || true)}
+FDTOVERLAY=${FDTOVERLAY:-$(command -v fdtoverlay || true)}
 AK3_FLASH_DTBO=${AK3_FLASH_DTBO:-0}
 AK3_FLASH_VENDOR_BOOT=${AK3_FLASH_VENDOR_BOOT:-0}
 LEGACY_DTBO_COMPAT=${LEGACY_DTBO_COMPAT:-${AK3_TEMPLATE}/dtbo.img}
-DTBO_ENTRY_COUNT=${DTBO_ENTRY_COUNT:-2}
+DTBO_ENTRY_COUNT=${DTBO_ENTRY_COUNT:-3}
+LK_DTB_COMPAT=${LK_DTB_COMPAT:-}
 SKIP_AK3=${SKIP_AK3:-0}
 VENDOR_BOOT_PAGESIZE=${VENDOR_BOOT_PAGESIZE:-2048}
 VENDOR_BOOT_BASE=${VENDOR_BOOT_BASE:-0x40000000}
@@ -203,6 +205,16 @@ if [ -f "$LEGACY_DTBO_COMPAT" ]; then
 	compat_overlays+=("${DT_OUT}/legacy-fire.dtbo")
 fi
 validate_overlay_symbols "${DT_OUT}/mt6768.dtb" "${compat_overlays[@]}"
+if [ -n "$LK_DTB_COMPAT" ]; then
+	[ -f "$LK_DTB_COMPAT" ] || die "LK_DTB_COMPAT not found: $LK_DTB_COMPAT"
+	validate_overlay_symbols "$LK_DTB_COMPAT" "${compat_overlays[@]}"
+	if [ -n "$FDTOVERLAY" ]; then
+		"$FDTOVERLAY" -i "$LK_DTB_COMPAT" -o "${DT_OUT}/lk-overlay-test.dtb" \
+			"${DT_OUT}/fire.dtbo" \
+			> "${DT_OUT}/fdtoverlay-lk.log" 2>&1 || \
+			die "fire.dtbo cannot be applied to LK_DTB_COMPAT; see ${DT_OUT}/fdtoverlay-lk.log"
+	fi
+fi
 
 [[ "$DTBO_ENTRY_COUNT" =~ ^[1-9][0-9]*$ ]] || die "DTBO_ENTRY_COUNT must be a positive integer"
 dtbo_entries=()

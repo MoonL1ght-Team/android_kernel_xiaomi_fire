@@ -2632,9 +2632,14 @@ transparent_hugepage=never";
 		compatible = "mediatek,goodix-fp";
 	};
 
-	fingerprint_fpc:fingerprint_fpc{
-	    compatible = "mediatek,fpsensor";
-    };
+	fingerprint_fpc: fingerprint_fpc {
+		compatible = "mediatek,fpsensor";
+		fpc,enable-wakeup;
+		vio28-supply = <&mt_pmic_vldo28_ldo_reg>;
+		fpc,rst_gpio = <&pio 160 0>;
+		fpc,irq_gpio = <&pio 7 0>;
+		status = "okay";
+	};
 
 	regulator_vibrator: regulator-vibrator {
 		compatible = "regulator-vibrator";
@@ -5832,3 +5837,4 @@ transparent_hugepage=never";
 	md-vmodem = <750000 750000>;
 };
 
+#include "mediatek/bat_setting/mt6768_battery_prop_fire.dtsi"

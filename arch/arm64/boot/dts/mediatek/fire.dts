@@ -570,13 +570,6 @@
 		status = "okay";
 	};
 };
-&fingerprint_fpc {
-	fpc,enable-wakeup;
-	vio28-supply = <&mt_pmic_vldo28_ldo_reg>;
-	fpc,rst_gpio = <&pio 160 0>;
-	fpc,irq_gpio = <&pio 7 0>;
-	status = "okay";
-};
 &goodix_fp {
 	interrupt-parent = <&pio>;
 	interrupts = <7 IRQ_TYPE_EDGE_RISING 7 0>;
@@ -598,5 +591,4 @@
 #include "mediatek/cust_mt6768_camera.dtsi"
 #include "mediatek/cust_mt6768_touch_1080x2460.dtsi"
 #include "mediatek/mt6885-sia8152s.dtsi"
-#include "mediatek/bat_setting/mt6768_battery_prop_fire.dtsi"
 /*End of this file, DO NOT ADD ANYTHING HERE*/
