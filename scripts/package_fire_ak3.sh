@@ -44,6 +44,7 @@ DTC=${DTC:-$(command -v dtc || true)}
 AK3_FLASH_DTBO=${AK3_FLASH_DTBO:-0}
 AK3_FLASH_VENDOR_BOOT=${AK3_FLASH_VENDOR_BOOT:-0}
 LEGACY_DTBO_COMPAT=${LEGACY_DTBO_COMPAT:-${AK3_TEMPLATE}/dtbo.img}
+DTBO_ENTRY_COUNT=${DTBO_ENTRY_COUNT:-2}
 SKIP_AK3=${SKIP_AK3:-0}
 VENDOR_BOOT_PAGESIZE=${VENDOR_BOOT_PAGESIZE:-2048}
 VENDOR_BOOT_BASE=${VENDOR_BOOT_BASE:-0x40000000}
@@ -202,7 +203,13 @@ if [ -f "$LEGACY_DTBO_COMPAT" ]; then
 	compat_overlays+=("${DT_OUT}/legacy-fire.dtbo")
 fi
 validate_overlay_symbols "${DT_OUT}/mt6768.dtb" "${compat_overlays[@]}"
-"$MKDTIMG" create "${DT_OUT}/dtbo.img" --page_size=2048 "${DT_OUT}/fire.dtbo" \
+
+[[ "$DTBO_ENTRY_COUNT" =~ ^[1-9][0-9]*$ ]] || die "DTBO_ENTRY_COUNT must be a positive integer"
+dtbo_entries=()
+for ((i = 0; i < DTBO_ENTRY_COUNT; i++)); do
+	dtbo_entries+=("${DT_OUT}/fire.dtbo")
+done
+"$MKDTIMG" create "${DT_OUT}/dtbo.img" --page_size=2048 "${dtbo_entries[@]}" \
 	> "${DT_OUT}/mkdtimg.log" 2>&1
 
 echo "==> Building Fire vendor_boot"
@@ -475,6 +482,25 @@ ak_partition_exists() {
 	return 1;
 }
 
+ak_has_space_for_copy() {
+	copy_src=$1;
+	copy_mount=$2;
+	copy_existing=$3;
+	copy_required=$(du -sk "$copy_src" 2>/dev/null | awk '{print $1}');
+	copy_free=$(df -Pk "$copy_mount" 2>/dev/null | awk 'NR == 2 {print $4}');
+	copy_old=0;
+	copy_reserve=32768;
+
+	[ -n "$copy_required" ] || return 1;
+	[ -n "$copy_free" ] || return 1;
+	if [ -d "$copy_existing" ]; then
+		copy_old=$(du -sk "$copy_existing" 2>/dev/null | awk '{print $1}');
+		[ -n "$copy_old" ] || copy_old=0;
+	fi;
+
+	[ $((copy_free + copy_old)) -ge $((copy_required + copy_reserve)) ];
+}
+
 assert_boot_dtbo_pair() {
 	if [ -f dtbo.img ] && [ ! -f dtb ]; then
 		abort "dtbo.img is present without matching boot dtb. Aborting to avoid LK overlay crash...";
@@ -496,6 +522,12 @@ install_vendor_modules() {
 			mount -o rw,remount -t auto /vendor 2>/dev/null || true;
 			if mkdir -p "$dst" 2>/dev/null && touch "$dst/.ak3-write-test" 2>/dev/null; then
 				rm -f "$dst/.ak3-write-test";
+				if ! ak_has_space_for_copy "$src" /vendor "$dst"; then
+					mount -o ro,remount -t auto /vendor 2>/dev/null || true;
+					ui_print " " "Vendor has too little free space for modules; using systemless overlay.";
+					install_systemless_vendor_modules "$src";
+					return $?;
+				fi;
 				rm -rf "$dst";
 				mkdir -p "$dst";
 				cp -rLf "$src/." "$dst/" || abort "Copying vendor modules failed. Aborting...";
@@ -524,6 +556,7 @@ install_systemless_vendor_modules() {
 	fi;
 	ak_is_mounted /data || abort "Vendor is read-only and /data is not mounted for systemless modules. Aborting...";
 	[ -d /data/adb/modules ] || abort "Vendor is read-only and Magisk/KernelSU module path was not found. Aborting...";
+	ak_has_space_for_copy "$src" /data "$module" || abort "/data has too little free space for systemless vendor modules. Aborting...";
 
 	rm -rf "$module";
 	mkdir -p "$dst";
