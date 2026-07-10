@@ -857,12 +857,14 @@ MODULE_EOF
 }
 
 dump_boot;
+cd "$AKHOME";
 prepare_fire66_boot_layout;
 normalize_fire66_boot_cmdline;
 patch_ramdisk_module_loaders;
 assert_boot_dtbo_pair;
 install_vendor_modules;
 drop_unrequested_vendor_boot;
+cd "$AKHOME";
 write_boot;
 AK3_EOF
 	sed -i "s|__FIRE66_BOOT_LAYOUT__|${FIRE66_BOOT_LAYOUT}|g" "${STAGE}/anykernel.sh"
