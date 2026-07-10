@@ -6,6 +6,12 @@ set -e
 DEVICE_MODULES_DIR=$(basename $(dirname $0))
 source "${DEVICE_MODULES_DIR}/kernel/kleaf/_setup_env.sh"
 
+if [[ -z "${DEFCONFIG_OVERLAYS:-}" && "${PROJECT:-}" == "mgk_64_k66" ]]
+then
+  DEFCONFIG_OVERLAYS="mt6768_overlay.config fire_overlay.config"
+fi
+export DEFCONFIG_OVERLAYS
+
 CCACHE_EXEC=${CCACHE_EXEC:-$(command -v ccache || true)}
 CCACHE_DIR=${CCACHE_DIR:-${HOME}/.cache/ccache/inferno-kernel}
 CCACHE_MAXSIZE=${CCACHE_MAXSIZE:-35G}
