@@ -39,12 +39,18 @@ ROM_ARTIFACTS_DIR=${ROM_ARTIFACTS_DIR:-${REPO_ROOT}/dist/rom/${PROJECT}.${MODE}}
 STAGE_BASE=${STAGE_BASE:-${OUT_DIR}/fire-ak3-stage}
 MKDTIMG=${MKDTIMG:-${KERNEL_ROOT}/prebuilts/kernel-build-tools/linux-x86/bin/mkdtimg}
 MKBOOTIMG=${MKBOOTIMG:-$(command -v mkbootimg || true)}
+UNPACK_BOOTIMG=${UNPACK_BOOTIMG:-${KERNEL_ROOT}/system/tools/mkbootimg/unpack_bootimg.py}
 CPP=${CPP:-$(command -v cpp || true)}
 DTC=${DTC:-$(command -v dtc || true)}
 FDTOVERLAY=${FDTOVERLAY:-$(command -v fdtoverlay || true)}
 STRIP=${STRIP:-$(command -v llvm-strip || true)}
 FIRE66_BOOT_LAYOUT=${FIRE66_BOOT_LAYOUT:-hybrid}
 FIRE66_KERNEL_COMPRESSION=${FIRE66_KERNEL_COMPRESSION:-gzip}
+FIRE66_BOOT_CMDLINE=${FIRE66_BOOT_CMDLINE:-"bootopt=64S3,32N2,64N2"}
+FIRE66_BASE_BOOT_IMG=${FIRE66_BASE_BOOT_IMG:-}
+FIRE66_BOOT_OS_VERSION=${FIRE66_BOOT_OS_VERSION:-16.0.0}
+FIRE66_BOOT_OS_PATCH_LEVEL=${FIRE66_BOOT_OS_PATCH_LEVEL:-2026-06}
+FIRE66_BOOT_MAX_BYTES=${FIRE66_BOOT_MAX_BYTES:-134217728}
 AK3_FLASH_DTBO=${AK3_FLASH_DTBO:-1}
 AK3_FLASH_VENDOR_BOOT=${AK3_FLASH_VENDOR_BOOT:-}
 LEGACY_DTBO_COMPAT=${LEGACY_DTBO_COMPAT:-${AK3_TEMPLATE}/dtbo.img}
@@ -54,12 +60,15 @@ SKIP_AK3=${SKIP_AK3:-0}
 STRIP_DEBUG_MODULES=${STRIP_DEBUG_MODULES:-1}
 FIRST_STAGE_VENDOR_BOOT_MODULES=${FIRST_STAGE_VENDOR_BOOT_MODULES:-"mtk-pmic-wrap.ko mt6358-regulator.ko clk-mt6768.ko clk-mt6768-pg.ko pinctrl-mt6768.ko mtk-mmc.ko"}
 VENDOR_BOOT_PAGESIZE=${VENDOR_BOOT_PAGESIZE:-2048}
-VENDOR_BOOT_BASE=${VENDOR_BOOT_BASE:-0x40000000}
-VENDOR_BOOT_DTB_OFFSET=${VENDOR_BOOT_DTB_OFFSET:-0x0bc80000}
+VENDOR_BOOT_BASE=${VENDOR_BOOT_BASE:-0x40078000}
+VENDOR_BOOT_KERNEL_OFFSET=${VENDOR_BOOT_KERNEL_OFFSET:-0x00008000}
+VENDOR_BOOT_RAMDISK_OFFSET=${VENDOR_BOOT_RAMDISK_OFFSET:-0x07c08000}
+VENDOR_BOOT_TAGS_OFFSET=${VENDOR_BOOT_TAGS_OFFSET:-0x0bc08000}
+VENDOR_BOOT_DTB_OFFSET=${VENDOR_BOOT_DTB_OFFSET:-0x0bc08000}
 VENDOR_BOOT_MAX_BYTES=${VENDOR_BOOT_MAX_BYTES:-67108864}
 
 case "$FIRE66_BOOT_LAYOUT" in
-	compat|hybrid|vendor_boot) ;;
+	compat|hybrid|vendor_boot|boot_v3_vendor_boot) ;;
 	*) die "unsupported FIRE66_BOOT_LAYOUT: $FIRE66_BOOT_LAYOUT" ;;
 esac
 case "$FIRE66_KERNEL_COMPRESSION" in
@@ -67,7 +76,9 @@ case "$FIRE66_KERNEL_COMPRESSION" in
 	*) die "unsupported FIRE66_KERNEL_COMPRESSION: $FIRE66_KERNEL_COMPRESSION" ;;
 esac
 if [ -z "$AK3_FLASH_VENDOR_BOOT" ]; then
-	if [ "$FIRE66_BOOT_LAYOUT" = vendor_boot ] || [ "$FIRE66_BOOT_LAYOUT" = hybrid ]; then
+	if [ "$FIRE66_BOOT_LAYOUT" = vendor_boot ] ||
+		[ "$FIRE66_BOOT_LAYOUT" = hybrid ] ||
+		[ "$FIRE66_BOOT_LAYOUT" = boot_v3_vendor_boot ]; then
 		AK3_FLASH_VENDOR_BOOT=1
 	else
 		AK3_FLASH_VENDOR_BOOT=0
@@ -89,6 +100,10 @@ need_tool cpio
 [ "$STRIP_DEBUG_MODULES" != 1 ] || [ -n "$STRIP" ] || die "llvm-strip is required"
 [ -x "$MKDTIMG" ] || die "mkdtimg not found: $MKDTIMG"
 [ -x "$MKBOOTIMG" ] || die "mkbootimg not executable: $MKBOOTIMG"
+[ "$FIRE66_BOOT_LAYOUT" != boot_v3_vendor_boot ] || [ -x "$UNPACK_BOOTIMG" ] || \
+	die "unpack_bootimg not executable: $UNPACK_BOOTIMG"
+[ "$FIRE66_BOOT_LAYOUT" != boot_v3_vendor_boot ] || [ -f "$FIRE66_BASE_BOOT_IMG" ] || \
+	die "FIRE66_BASE_BOOT_IMG is required for boot_v3_vendor_boot layout"
 [ "$STRIP_DEBUG_MODULES" != 1 ] || [ -x "$STRIP" ] || die "llvm-strip not executable: $STRIP"
 [ -d "$KERNEL_SRC" ] || die "kernel source not found: $KERNEL_SRC"
 [ -d "$DEVICE_MODULES_SRC" ] || die "device module source not found: $DEVICE_MODULES_SRC"
@@ -314,6 +329,9 @@ build_vendor_boot() {
 		--header_version 3 \
 		--pagesize "$VENDOR_BOOT_PAGESIZE" \
 		--base "$VENDOR_BOOT_BASE" \
+		--kernel_offset "$VENDOR_BOOT_KERNEL_OFFSET" \
+		--ramdisk_offset "$VENDOR_BOOT_RAMDISK_OFFSET" \
+		--tags_offset "$VENDOR_BOOT_TAGS_OFFSET" \
 		--dtb_offset "$VENDOR_BOOT_DTB_OFFSET" \
 		--vendor_ramdisk "$vendor_ramdisk" \
 		--dtb "${DT_OUT}/mt6768.dtb" \
@@ -324,11 +342,41 @@ build_vendor_boot() {
 		die "vendor_boot.img is larger than ${VENDOR_BOOT_MAX_BYTES} bytes"
 }
 
+build_fire_boot_v3() {
+	local base_boot_dir="${WORK_DIR}/base_boot"
+	local boot_size
+
+	[ -f "$FIRE66_BASE_BOOT_IMG" ] ||
+		die "FIRE66_BASE_BOOT_IMG is required for boot_v3_vendor_boot layout"
+
+	echo "==> Building Fire boot.img header v3"
+	rm -rf "$base_boot_dir"
+	mkdir -p "$base_boot_dir"
+	"$UNPACK_BOOTIMG" --boot_img "$FIRE66_BASE_BOOT_IMG" --out "$base_boot_dir" \
+		> "${DT_OUT}/unpack-base-boot.log" 2>&1
+	[ -f "${base_boot_dir}/ramdisk" ] ||
+		die "base boot image has no ramdisk: $FIRE66_BASE_BOOT_IMG"
+
+	"$MKBOOTIMG" \
+		--header_version 3 \
+		--kernel "$BOOT_IMAGE_STAGE" \
+		--ramdisk "${base_boot_dir}/ramdisk" \
+		--cmdline "$FIRE66_BOOT_CMDLINE" \
+		--os_version "$FIRE66_BOOT_OS_VERSION" \
+		--os_patch_level "$FIRE66_BOOT_OS_PATCH_LEVEL" \
+		--output "${DT_OUT}/boot.img" \
+		> "${DT_OUT}/mkbootimg-boot-v3.log" 2>&1
+	boot_size=$(stat -c %s "${DT_OUT}/boot.img")
+	[ "$boot_size" -le "$FIRE66_BOOT_MAX_BYTES" ] ||
+		die "boot.img is larger than ${FIRE66_BOOT_MAX_BYTES} bytes"
+}
+
 echo "==> Staging AnyKernel3"
 if [ "$SKIP_AK3" != 1 ]; then
 	rsync -a --delete --exclude='.git' "${AK3_TEMPLATE}/" "${STAGE}/"
 	find "$STAGE" -maxdepth 1 -type f \( \
 		-name 'Image*' -o \
+		-name 'boot.img' -o \
 		-name 'dtb' -o \
 		-name 'dtb.img' -o \
 		-name 'dtbo.img' -o \
@@ -338,7 +386,9 @@ fi
 rm -rf "${STAGE}/modules"
 mkdir -p "$MOD_DST"
 if [ "$SKIP_AK3" != 1 ]; then
-	cp -f "$BOOT_IMAGE_STAGE" "${STAGE}/${BOOT_IMAGE_NAME}"
+	if [ "$FIRE66_BOOT_LAYOUT" != boot_v3_vendor_boot ]; then
+		cp -f "$BOOT_IMAGE_STAGE" "${STAGE}/${BOOT_IMAGE_NAME}"
+	fi
 	if [ "$FIRE66_BOOT_LAYOUT" = compat ] || [ "$FIRE66_BOOT_LAYOUT" = hybrid ]; then
 		cp -f "${DT_OUT}/mt6768.dtb" "${STAGE}/dtb"
 	fi
@@ -590,8 +640,14 @@ build_first_stage_vendor_ramdisk() {
 
 build_first_stage_vendor_ramdisk
 build_vendor_boot "${DT_OUT}/vendor-ramdisk.cpio.gz"
+if [ "$FIRE66_BOOT_LAYOUT" = boot_v3_vendor_boot ]; then
+	build_fire_boot_v3
+fi
 if [ "$SKIP_AK3" != 1 ] && [ "$AK3_FLASH_VENDOR_BOOT" = 1 ]; then
 	cp -f "${DT_OUT}/vendor_boot.img" "${STAGE}/vendor_boot.img"
+fi
+if [ "$SKIP_AK3" != 1 ] && [ "$FIRE66_BOOT_LAYOUT" = boot_v3_vendor_boot ]; then
+	cp -f "${DT_OUT}/boot.img" "${STAGE}/boot.img"
 fi
 
 echo "==> Exporting ROM artifacts"
@@ -610,6 +666,7 @@ esac
 cp -f "${DT_OUT}/mt6768.dtb" "${ROM_ARTIFACTS_DIR}/dtb"
 cp -f "${DT_OUT}/dtbo.img" "${ROM_ARTIFACTS_DIR}/dtbo.img"
 cp -f "${DT_OUT}/vendor_boot.img" "${ROM_ARTIFACTS_DIR}/vendor_boot.img"
+[ ! -f "${DT_OUT}/boot.img" ] || cp -f "${DT_OUT}/boot.img" "${ROM_ARTIFACTS_DIR}/boot.img"
 cp -a "${MOD_DST}/." "${ROM_ARTIFACTS_DIR}/modules/vendor/lib/modules/"
 
 missing_required=()
@@ -730,6 +787,14 @@ assert_boot_dtbo_pair() {
 			ak_partition_exists vendor_boot ||
 				abort "vendor_boot partition was not found. Aborting to keep dtbo/vendor_boot in sync...";
 		;;
+		boot_v3_vendor_boot)
+			[ -f boot.img ] ||
+				abort "boot_v3_vendor_boot layout selected but boot.img is missing. Aborting...";
+			[ -f vendor_boot.img ] ||
+				abort "dtbo.img is present without matching vendor_boot.img. Aborting to avoid LK overlay crash...";
+			ak_partition_exists vendor_boot ||
+				abort "vendor_boot partition was not found. Aborting to keep boot/vendor_boot/dtbo in sync...";
+		;;
 		*)
 			abort "Unsupported Fire 6.6 boot layout: $FIRE66_BOOT_LAYOUT";
 		;;
@@ -757,6 +822,15 @@ prepare_fire66_boot_layout() {
 			done;
 			ui_print " " "Fire 6.6 layout: DTB will be provided by vendor_boot.";
 		;;
+		boot_v3_vendor_boot)
+			[ -f boot.img ] ||
+				abort "boot_v3_vendor_boot layout selected but boot.img is missing. Aborting...";
+			[ -f vendor_boot.img ] ||
+				abort "boot_v3_vendor_boot layout selected but vendor_boot.img is missing. Aborting...";
+			ak_partition_exists vendor_boot ||
+				abort "vendor_boot partition was not found. Aborting...";
+			ui_print " " "Fire 6.6 layout: flashing boot header v3 with vendor_boot ramdisk.";
+		;;
 		compat)
 			ui_print " " "Fire 6.6 layout: keeping DTB in boot.img compatibility path.";
 		;;
@@ -782,6 +856,16 @@ drop_unrequested_vendor_boot() {
 		fi;
 		rm -f vendor_boot.img;
 	fi;
+}
+
+flash_fire66_prebuilt_boot_pair() {
+	cd "$AKHOME";
+	prepare_fire66_boot_layout;
+	assert_boot_dtbo_pair;
+	install_vendor_modules;
+	flash_generic boot;
+	flash_generic vendor_boot;
+	flash_generic dtbo;
 }
 
 normalize_fire66_boot_cmdline() {
@@ -961,6 +1045,12 @@ MODULE_EOF
 	find "$module" -type f -exec chmod 644 {} +;
 	ui_print " " "Vendor modules installed as Magisk/KernelSU overlay.";
 }
+
+cd "$AKHOME";
+if [ "$FIRE66_BOOT_LAYOUT" = boot_v3_vendor_boot ]; then
+	flash_fire66_prebuilt_boot_pair;
+	exit 0;
+fi;
 
 dump_boot;
 cd "$AKHOME";
