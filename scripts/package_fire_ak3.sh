@@ -177,7 +177,7 @@ STAMP=${STAMP:-$(date +%Y%m%d-%H%M%S)}
 WORK_DIR="${STAGE_BASE}/${STAMP}"
 STAGE="${WORK_DIR}/AnyKernel3"
 DT_OUT="${WORK_DIR}/dt"
-MOD_DST="${STAGE}/modules/system/vendor/lib/modules"
+MOD_DST="${WORK_DIR}/modules/vendor/lib/modules"
 ZIP_PATH="${DIST_DIR}/MoonLightKernel-fire-GKI-6.6-AK3-${STAMP}.zip"
 
 rm -rf "$WORK_DIR"
@@ -750,8 +750,8 @@ if [ "$SKIP_AK3" != 1 ]; then
 properties() { '
 kernel.string=MoonLightKernel fire GKI 6.6
 do.devicecheck=1
-do.modules=1
-do.systemless=1
+do.modules=0
+do.systemless=0
 do.systemmount=0
 do.cleanup=1
 do.cleanuponabort=0
@@ -775,154 +775,15 @@ PATCH_VBMETA_FLAG=auto;
 
 FIRE66_BOOT_LAYOUT="__FIRE66_BOOT_LAYOUT__";
 
-# compat and hybrid keep the boot-header-v2 DTB path for the Fire LK. The
-# boot_v3/boot_v4 vendor_boot layouts flash prebuilt boot/vendor_boot images
-# and rely on LK to consume the vendor_boot DTB and vendor ramdisk directly.
-if [ "$FIRE66_BOOT_LAYOUT" = compat ] || [ "$FIRE66_BOOT_LAYOUT" = hybrid ]; then
-	touch vendor_v3_setup;
-fi;
+# Keep AnyKernel3 from auto-splitting staged DTB/vendor ramdisk trees. This
+# package either repacks the legacy boot image or flashes an already matched
+# boot/vendor_boot/dtbo image set.
+touch vendor_v3_setup;
+touch init_v4_setup;
 
 . tools/ak3-core.sh;
 
 FIRE66_BOOT_CMDLINE="__FIRE66_BOOT_CMDLINE__";
-
-ak_is_mounted() {
-	mount | grep -q " $1 ";
-}
-
-ak_partition_exists() {
-	part=$1;
-	for path in /dev/block/mapper /dev/block/by-name /dev/block/bootdevice/by-name; do
-		if [ -e "$path/${part}${SLOT}" ] || [ -e "$path/${part}" ]; then
-			return 0;
-		fi;
-	done;
-	return 1;
-}
-
-ak_has_space_for_copy() {
-	copy_src=$1;
-	copy_mount=$2;
-	copy_existing=$3;
-	copy_required=$(du -sk "$copy_src" 2>/dev/null | awk '{print $1}');
-	copy_free=$(df -Pk "$copy_mount" 2>/dev/null | awk 'NR == 2 {print $4}');
-	copy_old=0;
-	copy_reserve=32768;
-
-	[ -n "$copy_required" ] || return 1;
-	[ -n "$copy_free" ] || return 1;
-	if [ -d "$copy_existing" ]; then
-		copy_old=$(du -sk "$copy_existing" 2>/dev/null | awk '{print $1}');
-		[ -n "$copy_old" ] || copy_old=0;
-	fi;
-
-	[ $((copy_free + copy_old)) -ge $((copy_required + copy_reserve)) ];
-}
-
-assert_boot_dtbo_pair() {
-	if [ ! -f dtbo.img ]; then
-		return 0;
-	fi;
-
-	case "$FIRE66_BOOT_LAYOUT" in
-		compat)
-			[ -f dtb ] ||
-				abort "dtbo.img is present without matching boot dtb. Aborting to avoid LK overlay crash...";
-		;;
-		hybrid)
-			[ -f dtb ] ||
-				abort "dtbo.img is present without matching boot dtb. Aborting to avoid LK overlay crash...";
-			[ -f vendor_boot.img ] ||
-				abort "dtbo.img is present without matching vendor_boot.img. Aborting to avoid LK overlay crash...";
-			ak_partition_exists vendor_boot ||
-				abort "vendor_boot partition was not found. Aborting to keep dtbo/vendor_boot in sync...";
-		;;
-		vendor_boot)
-			[ -f vendor_boot.img ] ||
-				abort "dtbo.img is present without matching vendor_boot.img. Aborting to avoid LK overlay crash...";
-			ak_partition_exists vendor_boot ||
-				abort "vendor_boot partition was not found. Aborting to keep dtbo/vendor_boot in sync...";
-		;;
-		boot_v3_vendor_boot|boot_v4_vendor_boot)
-			[ -f boot.img ] ||
-				abort "$FIRE66_BOOT_LAYOUT layout selected but boot.img is missing. Aborting...";
-			[ -f vendor_boot.img ] ||
-				abort "dtbo.img is present without matching vendor_boot.img. Aborting to avoid LK overlay crash...";
-			ak_partition_exists vendor_boot ||
-				abort "vendor_boot partition was not found. Aborting to keep boot/vendor_boot/dtbo in sync...";
-		;;
-		*)
-			abort "Unsupported Fire 6.6 boot layout: $FIRE66_BOOT_LAYOUT";
-		;;
-	esac;
-}
-
-prepare_fire66_boot_layout() {
-	case "$FIRE66_BOOT_LAYOUT" in
-		vendor_boot)
-			[ -f vendor_boot.img ] ||
-				abort "vendor_boot layout selected but vendor_boot.img is missing. Aborting...";
-			ak_partition_exists vendor_boot ||
-				abort "vendor_boot partition was not found. Aborting...";
-
-			rm -f dtb dtb.img;
-			for fdt in \
-				"$SPLITIMG/dt" \
-				"$SPLITIMG/dtb" \
-				"$SPLITIMG/extra" \
-				"$SPLITIMG/kernel_dtb" \
-				"$SPLITIMG/recovery_dtbo" \
-				"$SPLITIMG/boot.img-dt" \
-				"$SPLITIMG/boot.img-dtb"; do
-				rm -f "$fdt";
-			done;
-			ui_print " " "Fire 6.6 layout: DTB will be provided by vendor_boot.";
-		;;
-		boot_v3_vendor_boot|boot_v4_vendor_boot)
-			[ -f boot.img ] ||
-				abort "$FIRE66_BOOT_LAYOUT layout selected but boot.img is missing. Aborting...";
-			[ -f vendor_boot.img ] ||
-				abort "$FIRE66_BOOT_LAYOUT layout selected but vendor_boot.img is missing. Aborting...";
-			ak_partition_exists vendor_boot ||
-				abort "vendor_boot partition was not found. Aborting...";
-			ui_print " " "Fire 6.6 layout: flashing prebuilt boot/vendor_boot GKI pair.";
-		;;
-		compat)
-			ui_print " " "Fire 6.6 layout: keeping DTB in boot.img compatibility path.";
-		;;
-		hybrid)
-			[ -f dtb ] ||
-				abort "hybrid layout selected but boot dtb is missing. Aborting...";
-			[ -f vendor_boot.img ] ||
-				abort "hybrid layout selected but vendor_boot.img is missing. Aborting...";
-			ak_partition_exists vendor_boot ||
-				abort "vendor_boot partition was not found. Aborting...";
-			ui_print " " "Fire 6.6 layout: keeping LK v2 DTB in boot.img and flashing vendor_boot.";
-		;;
-		*)
-			abort "Unsupported Fire 6.6 boot layout: $FIRE66_BOOT_LAYOUT";
-		;;
-	esac;
-}
-
-drop_unrequested_vendor_boot() {
-	if [ -f vendor_boot.img ] && ! ak_partition_exists vendor_boot; then
-		if [ "$FIRE66_BOOT_LAYOUT" = vendor_boot ]; then
-			abort "vendor_boot partition was not found. Aborting...";
-		fi;
-		rm -f vendor_boot.img;
-	fi;
-}
-
-flash_fire66_prebuilt_boot_pair() {
-	cd "$AKHOME";
-	prepare_fire66_boot_layout;
-	assert_boot_dtbo_pair;
-	install_vendor_modules;
-	flash_generic boot;
-	flash_generic vendor_boot;
-	flash_generic dtbo;
-}
 
 normalize_fire66_boot_cmdline() {
 	cmd="$FIRE66_BOOT_CMDLINE";
@@ -973,92 +834,6 @@ normalize_fire66_boot_cmdline() {
 	ui_print " " "Boot cmdline normalized (${old_len}->${new_len} bytes).";
 }
 
-install_vendor_modules() {
-	src=$AKHOME/modules/system/vendor/lib/modules;
-	dst=/vendor/lib/modules;
-
-	[ -d "$src" ] || abort "Vendor modules payload is missing. Aborting...";
-	ui_print " " "Installing vendor modules...";
-
-	if [ -d /vendor ]; then
-		if ! ak_is_mounted /vendor; then
-			mount /vendor 2>/dev/null || true;
-		fi;
-		if ak_is_mounted /vendor; then
-			mount -o rw,remount -t auto /vendor 2>/dev/null || true;
-			if mkdir -p "$dst" 2>/dev/null && touch "$dst/.ak3-write-test" 2>/dev/null; then
-				rm -f "$dst/.ak3-write-test";
-				if ! ak_has_space_for_copy "$src" /vendor "$dst"; then
-					mount -o ro,remount -t auto /vendor 2>/dev/null || true;
-					ui_print " " "Vendor has too little free space for modules; using systemless overlay.";
-					install_systemless_vendor_modules "$src";
-					return $?;
-				fi;
-				rm -rf "$dst";
-				mkdir -p "$dst";
-				cp -rLf "$src/." "$dst/" || abort "Copying vendor modules failed. Aborting...";
-				chown -R 0:0 "$dst" 2>/dev/null || chown -R 0.0 "$dst";
-				find "$dst" -type d -exec chmod 755 {} +;
-				find "$dst" -type f -exec chmod 644 {} +;
-				/system/bin/chcon -hR u:object_r:vendor_file:s0 "$dst" 2>/dev/null || true;
-				install_vendor_module_loader /vendor ||
-					abort "Installing vendor module loader rc failed. Aborting...";
-				patch_vendor_module_loaders /vendor ||
-					abort "Patching vendor module init rc failed. Aborting...";
-				mount -o ro,remount -t auto /vendor 2>/dev/null || true;
-				ui_print " " "Vendor modules installed directly.";
-				return 0;
-			fi;
-			mount -o ro,remount -t auto /vendor 2>/dev/null || true;
-		fi;
-	fi;
-
-	install_systemless_vendor_modules "$src";
-}
-
-write_fire66_module_loader_rc() {
-	dst_dir=$1;
-	mkdir -p "$dst_dir" || return 1;
-	cat > "$dst_dir/init.fire66-kmods.rc" <<'RC_EOF'
-# Generated by Fire 6.6 AK3 to load GKI vendor modules with dependency resolution.
-on boot
-    exec_background u:r:vendor_modprobe:s0 -- /vendor/bin/modprobe -a -d /vendor/lib/modules fpsgo.ko wmt_drv.ko fpc_fingerprint.ko syv690.ko
-
-on property:vendor.connsys.driver.ready=yes
-    exec_background u:r:vendor_modprobe:s0 -- /vendor/bin/modprobe -a -d /vendor/lib/modules wmt_chrdev_wifi.ko wlan_drv_gen4m.ko
-RC_EOF
-	chown 0:0 "$dst_dir/init.fire66-kmods.rc" 2>/dev/null ||
-		chown 0.0 "$dst_dir/init.fire66-kmods.rc";
-	chmod 644 "$dst_dir/init.fire66-kmods.rc";
-	/system/bin/chcon u:object_r:vendor_configs_file:s0 "$dst_dir/init.fire66-kmods.rc" 2>/dev/null || true;
-}
-
-install_vendor_module_loader() {
-	vendor_root=$1;
-	write_fire66_module_loader_rc "$vendor_root/etc/init";
-}
-
-patch_vendor_module_loaders() {
-	vendor_root=$1;
-	wmt_rc="$vendor_root/etc/init/init.wmt_drv.rc";
-	wlan_rc="$vendor_root/etc/init/init.wlan_drv.rc";
-
-	if [ -f "$wmt_rc" ]; then
-		sed -i \
-			's|^[[:space:]]*insmod /vendor/lib/modules/wmt_drv\.ko|    exec_background u:r:vendor_modprobe:s0 -- /vendor/bin/modprobe -a -d /vendor/lib/modules wmt_drv.ko|' \
-			"$wmt_rc" || return 1;
-	fi;
-
-	if [ -f "$wlan_rc" ]; then
-		sed -i \
-			's|^[[:space:]]*insmod /vendor/lib/modules/${ro.vendor.wlan.chrdev}\.ko|  exec_background u:r:vendor_modprobe:s0 -- /vendor/bin/modprobe -a -d /vendor/lib/modules ${ro.vendor.wlan.chrdev}.ko|' \
-			"$wlan_rc" || return 1;
-		sed -i \
-			's|^[[:space:]]*insmod /vendor/lib/modules/wlan_drv_${ro.vendor.wlan.gen}\.ko|  exec_background u:r:vendor_modprobe:s0 -- /vendor/bin/modprobe -a -d /vendor/lib/modules wlan_drv_${ro.vendor.wlan.gen}.ko|' \
-			"$wlan_rc" || return 1;
-	fi;
-}
-
 patch_ramdisk_module_loaders() {
 	mtk_rc="$RAMDISK/init.mt6768.rc";
 
@@ -1069,55 +844,27 @@ patch_ramdisk_module_loaders() {
 	fi;
 }
 
-install_systemless_vendor_modules() {
-	src=$1;
-	module=/data/adb/modules/fire66-kmods;
-	dst=$module/system/vendor/lib/modules;
-
-	if ! ak_is_mounted /data; then
-		mount /data 2>/dev/null || true;
-	fi;
-	ak_is_mounted /data || abort "Vendor is read-only and /data is not mounted for systemless modules. Aborting...";
-	[ -d /data/adb/modules ] || abort "Vendor is read-only and Magisk/KernelSU module path was not found. Aborting...";
-	ak_has_space_for_copy "$src" /data "$module" || abort "/data has too little free space for systemless vendor modules. Aborting...";
-
-	rm -rf "$module";
-	mkdir -p "$dst";
-	cp -rLf "$src/." "$dst/" || abort "Copying systemless vendor modules failed. Aborting...";
-	install_vendor_module_loader "$module/system/vendor" ||
-		abort "Installing systemless vendor module loader rc failed. Aborting...";
-	cat > "$module/module.prop" <<'MODULE_EOF'
-id=fire66-kmods
-name=Fire 6.6 kernel vendor modules
-version=6.6
-versionCode=66
-author=MoonLightKernel
-description=Vendor module overlay for the Fire/Heat 6.6 GKI kernel package
-MODULE_EOF
-	touch "$module/update";
-	rm -f "$module/remove" "$module/disable";
-	chown -R 0:0 "$module" 2>/dev/null || chown -R 0.0 "$module";
-	find "$module" -type d -exec chmod 755 {} +;
-	find "$module" -type f -exec chmod 644 {} +;
-	ui_print " " "Vendor modules installed as Magisk/KernelSU overlay.";
-}
-
 cd "$AKHOME";
 case "$FIRE66_BOOT_LAYOUT" in
 boot_v3_vendor_boot|boot_v4_vendor_boot)
-	flash_fire66_prebuilt_boot_pair;
+	[ -f boot.img ] ||
+		abort "$FIRE66_BOOT_LAYOUT layout selected but boot.img is missing. Aborting...";
+	[ -f vendor_boot.img ] ||
+		abort "$FIRE66_BOOT_LAYOUT layout selected but vendor_boot.img is missing. Aborting...";
+	[ -f dtbo.img ] ||
+		abort "$FIRE66_BOOT_LAYOUT layout selected but dtbo.img is missing. Aborting...";
+	ui_print " " "Fire 6.6 layout: flashing matched boot/vendor_boot/dtbo images.";
+	flash_generic boot;
+	flash_generic vendor_boot;
+	flash_generic dtbo;
 	exit 0;
 ;;
 esac;
 
 dump_boot;
 cd "$AKHOME";
-prepare_fire66_boot_layout;
 normalize_fire66_boot_cmdline;
 patch_ramdisk_module_loaders;
-assert_boot_dtbo_pair;
-install_vendor_modules;
-drop_unrequested_vendor_boot;
 cd "$AKHOME";
 write_boot;
 AK3_EOF
