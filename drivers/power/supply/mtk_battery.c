@@ -183,15 +183,17 @@ int find_battery_id(const char *target)
 }
 void fgauge_set_profile_id(struct mtk_battery *gm)
 {
-	const char *bat_info = NULL;
-	int bat_info_index;
+	int bat_info_index = -1;
 
-	bat_info = oem_battery_sn();
+#if IS_ENABLED(CONFIG_OEM_DEVINFO)
+	const char *bat_info = oem_battery_sn();
+
 	bat_info_index = find_battery_sn(bat_info);
 	if (bat_info_index < 0) {
 		bat_info_index = find_battery_id(bat_info);
 	}
 	bm_err(gm, "battery profile name: %s\n", bat_info);
+#endif
 	switch(bat_info_index) {
 		case 0:
 		case 6:
