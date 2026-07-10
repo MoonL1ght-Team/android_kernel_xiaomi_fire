@@ -52,6 +52,7 @@ DTBO_ENTRY_COUNT=${DTBO_ENTRY_COUNT:-1}
 LK_DTB_COMPAT=${LK_DTB_COMPAT:-}
 SKIP_AK3=${SKIP_AK3:-0}
 STRIP_DEBUG_MODULES=${STRIP_DEBUG_MODULES:-1}
+FIRST_STAGE_VENDOR_BOOT_MODULES=${FIRST_STAGE_VENDOR_BOOT_MODULES:-"mtk-pmic-wrap.ko mt6358-regulator.ko clk-mt6768.ko clk-mt6768-pg.ko pinctrl-mt6768.ko mtk-mmc.ko"}
 VENDOR_BOOT_PAGESIZE=${VENDOR_BOOT_PAGESIZE:-2048}
 VENDOR_BOOT_BASE=${VENDOR_BOOT_BASE:-0x40000000}
 VENDOR_BOOT_DTB_OFFSET=${VENDOR_BOOT_DTB_OFFSET:-0x0bc80000}
@@ -81,6 +82,7 @@ if [ "$SKIP_AK3" != 1 ]; then
 fi
 need_tool modinfo
 need_tool gzip
+need_tool cpio
 [ -n "$CPP" ] || die "cpp is required"
 [ -n "$DTC" ] || die "dtc is required"
 [ -n "$MKBOOTIMG" ] || die "mkbootimg is required"
@@ -303,20 +305,24 @@ done
 "$MKDTIMG" create "${DT_OUT}/dtbo.img" --page_size=2048 "${dtbo_entries[@]}" \
 	> "${DT_OUT}/mkdtimg.log" 2>&1
 
-echo "==> Building Fire vendor_boot"
-: > "${DT_OUT}/empty-vendor-ramdisk"
-"$MKBOOTIMG" \
-	--header_version 3 \
-	--pagesize "$VENDOR_BOOT_PAGESIZE" \
-	--base "$VENDOR_BOOT_BASE" \
-	--dtb_offset "$VENDOR_BOOT_DTB_OFFSET" \
-	--vendor_ramdisk "${DT_OUT}/empty-vendor-ramdisk" \
-	--dtb "${DT_OUT}/mt6768.dtb" \
-	--vendor_boot "${DT_OUT}/vendor_boot.img" \
-	> "${DT_OUT}/mkbootimg-vendor_boot.log" 2>&1
-vendor_boot_size=$(stat -c %s "${DT_OUT}/vendor_boot.img")
-[ "$vendor_boot_size" -le "$VENDOR_BOOT_MAX_BYTES" ] || \
-	die "vendor_boot.img is larger than ${VENDOR_BOOT_MAX_BYTES} bytes"
+build_vendor_boot() {
+	local vendor_ramdisk=$1
+	local vendor_boot_size
+
+	echo "==> Building Fire vendor_boot"
+	"$MKBOOTIMG" \
+		--header_version 3 \
+		--pagesize "$VENDOR_BOOT_PAGESIZE" \
+		--base "$VENDOR_BOOT_BASE" \
+		--dtb_offset "$VENDOR_BOOT_DTB_OFFSET" \
+		--vendor_ramdisk "$vendor_ramdisk" \
+		--dtb "${DT_OUT}/mt6768.dtb" \
+		--vendor_boot "${DT_OUT}/vendor_boot.img" \
+		> "${DT_OUT}/mkbootimg-vendor_boot.log" 2>&1
+	vendor_boot_size=$(stat -c %s "${DT_OUT}/vendor_boot.img")
+	[ "$vendor_boot_size" -le "$VENDOR_BOOT_MAX_BYTES" ] || \
+		die "vendor_boot.img is larger than ${VENDOR_BOOT_MAX_BYTES} bytes"
+}
 
 echo "==> Staging AnyKernel3"
 if [ "$SKIP_AK3" != 1 ]; then
@@ -338,9 +344,6 @@ if [ "$SKIP_AK3" != 1 ]; then
 	fi
 	if [ "$AK3_FLASH_DTBO" = 1 ]; then
 		cp -f "${DT_OUT}/dtbo.img" "${STAGE}/dtbo.img"
-	fi
-	if [ "$AK3_FLASH_VENDOR_BOOT" = 1 ]; then
-		cp -f "${DT_OUT}/vendor_boot.img" "${STAGE}/vendor_boot.img"
 	fi
 fi
 
@@ -506,6 +509,90 @@ generate_module_metadata() {
 
 strip_module_debug_symbols
 generate_module_metadata
+
+build_first_stage_vendor_ramdisk() {
+	local vendor_ramdisk_dir="${WORK_DIR}/vendor_ramdisk"
+	local vendor_module_dir="${vendor_ramdisk_dir}/lib/modules"
+	local base dep deps line name
+	local -A selected=()
+	local -a selected_order=()
+
+	add_first_stage_module() {
+		local module=$1
+		local module_dep module_deps module_line
+
+		[ -f "${MOD_DST}/${module}" ] ||
+			die "first-stage vendor_boot module is missing: ${module}"
+		[ -n "${selected[$module]:-}" ] && return 0
+
+		module_line=$(grep -F "${module}:" "${MOD_DST}/modules.dep" | head -n1 || true)
+		[ -n "$module_line" ] ||
+			die "modules.dep has no entry for first-stage module: ${module}"
+		module_deps=${module_line#*:}
+		for module_dep in $module_deps; do
+			add_first_stage_module "$module_dep"
+		done
+
+		selected[$module]=1
+		selected_order+=("$module")
+	}
+
+	echo "==> Building first-stage vendor ramdisk"
+	rm -rf "$vendor_ramdisk_dir"
+	mkdir -p "$vendor_module_dir"
+
+	for base in $FIRST_STAGE_VENDOR_BOOT_MODULES; do
+		add_first_stage_module "$base"
+	done
+
+	: > "${vendor_module_dir}/modules.dep"
+	: > "${vendor_module_dir}/modules.alias"
+	: > "${vendor_module_dir}/modules.softdep"
+	: > "${vendor_module_dir}/modules.order"
+	: > "${vendor_module_dir}/modules.load"
+
+	for base in "${selected_order[@]}"; do
+		cp -f "${MOD_DST}/${base}" "${vendor_module_dir}/${base}"
+		printf '%s\n' "$base" >> "${vendor_module_dir}/modules.order"
+		printf '%s\n' "$base" >> "${vendor_module_dir}/modules.load"
+
+		line=$(grep -F "${base}:" "${MOD_DST}/modules.dep" | head -n1 || true)
+		printf '%s:' "$base" >> "${vendor_module_dir}/modules.dep"
+		deps=${line#*:}
+		for dep in $deps; do
+			[ -n "${selected[$dep]:-}" ] && printf ' %s' "$dep" >> "${vendor_module_dir}/modules.dep"
+		done
+		printf '\n' >> "${vendor_module_dir}/modules.dep"
+
+		name=$(modinfo -F name "${MOD_DST}/${base}" 2>/dev/null | head -n1 || true)
+		[ -n "$name" ] || name=${base%.ko}
+		awk -v module="$name" '$NF == module { print }' "${MOD_DST}/modules.alias" \
+			>> "${vendor_module_dir}/modules.alias"
+		awk -v module="$name" '$2 == module { print }' "${MOD_DST}/modules.softdep" \
+			>> "${vendor_module_dir}/modules.softdep"
+	done
+
+	: > "${vendor_module_dir}/modules.builtin"
+	: > "${vendor_module_dir}/modules.builtin.modinfo"
+	: > "${vendor_module_dir}/modules.devname"
+	: > "${vendor_module_dir}/modules.symbols"
+	: > "${vendor_module_dir}/modules.symbols.bin"
+
+	(
+		cd "$vendor_ramdisk_dir"
+		find . -print0 | LC_ALL=C sort -z |
+			cpio --null -o -H newc --owner root:root 2> "${DT_OUT}/vendor-ramdisk.cpio.log" |
+			gzip -n -9 > "${DT_OUT}/vendor-ramdisk.cpio.gz"
+	)
+
+	echo "First-stage vendor_boot modules: ${#selected_order[@]}"
+}
+
+build_first_stage_vendor_ramdisk
+build_vendor_boot "${DT_OUT}/vendor-ramdisk.cpio.gz"
+if [ "$SKIP_AK3" != 1 ] && [ "$AK3_FLASH_VENDOR_BOOT" = 1 ]; then
+	cp -f "${DT_OUT}/vendor_boot.img" "${STAGE}/vendor_boot.img"
+fi
 
 echo "==> Exporting ROM artifacts"
 rm -rf "$ROM_ARTIFACTS_DIR"
