@@ -15,6 +15,21 @@
 char mtk_ccm_name[camera_info_size] = { 0 };
 char mtk_i2c_dump[camera_info_size] = { 0 };
 
+static bool imgsensor_proc_sensor_valid(enum IMGSENSOR_SENSOR_IDX idx)
+{
+	return idx >= IMGSENSOR_SENSOR_IDX_MIN_NUM &&
+		idx < IMGSENSOR_SENSOR_IDX_MAX_NUM;
+}
+
+static struct IMGSENSOR_SENSOR *
+imgsensor_proc_get_sensor(enum IMGSENSOR_SENSOR_IDX idx)
+{
+	if (!imgsensor_proc_sensor_valid(idx))
+		return NULL;
+
+	return &gimgsensor.sensor[idx];
+}
+
 static int pdaf_type_info_read(struct seq_file *m, void *v)
 {
 #define bufsz 512
@@ -80,7 +95,7 @@ static ssize_t CAMERA_HW_Reg_Debug(struct file *file,
 	u32 u4CopyBufSize =
 		(count < (sizeof(regBuf) - 1)) ? (count) : (sizeof(regBuf) - 1);
 	struct IMGSENSOR_SENSOR *psensor =
-		&gimgsensor.sensor[IMGSENSOR_SENSOR_IDX_MAIN];
+		imgsensor_proc_get_sensor(IMGSENSOR_SENSOR_IDX_MAIN);
 
 	MSDK_SENSOR_REG_INFO_STRUCT sensorReg;
 
@@ -139,7 +154,7 @@ static ssize_t CAMERA_HW_Reg_Debug2(struct file *file, const char *buffer,
 	u32 u4CopyBufSize =
 		(count < (sizeof(regBuf) - 1)) ? (count) : (sizeof(regBuf) - 1);
 	struct IMGSENSOR_SENSOR *psensor =
-		&gimgsensor.sensor[IMGSENSOR_SENSOR_IDX_SUB];
+		imgsensor_proc_get_sensor(IMGSENSOR_SENSOR_IDX_SUB);
 
 	MSDK_SENSOR_REG_INFO_STRUCT sensorReg;
 
@@ -197,7 +212,7 @@ static ssize_t CAMERA_HW_Reg_Debug3(struct file *file, const char *buffer,
 	u32 u4CopyBufSize =
 		(count < (sizeof(regBuf) - 1)) ? (count) : (sizeof(regBuf) - 1);
 	struct IMGSENSOR_SENSOR *psensor =
-		&gimgsensor.sensor[IMGSENSOR_SENSOR_IDX_MAIN2];
+		imgsensor_proc_get_sensor(IMGSENSOR_SENSOR_IDX_MAIN2);
 
 	MSDK_SENSOR_REG_INFO_STRUCT sensorReg;
 
@@ -254,7 +269,7 @@ static ssize_t CAMERA_HW_Reg_Debug4(struct file *file, const char *buffer,
 	u32 u4CopyBufSize =
 		(count < (sizeof(regBuf) - 1)) ? (count) : (sizeof(regBuf) - 1);
 	struct IMGSENSOR_SENSOR *psensor =
-		&gimgsensor.sensor[IMGSENSOR_SENSOR_IDX_SUB2];
+		imgsensor_proc_get_sensor(IMGSENSOR_SENSOR_IDX_SUB2);
 
 	MSDK_SENSOR_REG_INFO_STRUCT sensorReg;
 
@@ -312,7 +327,7 @@ static ssize_t CAMERA_HW_Reg_Debug5(struct file *file, const char *buffer,
 	u32 u4CopyBufSize =
 		(count < (sizeof(regBuf) - 1)) ? (count) : (sizeof(regBuf) - 1);
 	struct IMGSENSOR_SENSOR *psensor =
-		&gimgsensor.sensor[IMGSENSOR_SENSOR_IDX_MAIN3];
+		imgsensor_proc_get_sensor(IMGSENSOR_SENSOR_IDX_MAIN3);
 
 	MSDK_SENSOR_REG_INFO_STRUCT sensorReg;
 
@@ -370,7 +385,7 @@ static ssize_t CAMERA_HW_Reg_Debug6(struct file *file, const char *buffer,
 	u32 u4CopyBufSize =
 		(count < (sizeof(regBuf) - 1)) ? (count) : (sizeof(regBuf) - 1);
 	struct IMGSENSOR_SENSOR *psensor =
-		&gimgsensor.sensor[IMGSENSOR_SENSOR_IDX_SUB3];
+		imgsensor_proc_get_sensor(IMGSENSOR_SENSOR_IDX_SUB3);
 
 	MSDK_SENSOR_REG_INFO_STRUCT sensorReg;
 
@@ -427,7 +442,7 @@ static ssize_t CAMERA_HW_Reg_Debug7(struct file *file, const char *buffer,
 	u32 u4CopyBufSize =
 		(count < (sizeof(regBuf) - 1)) ? (count) : (sizeof(regBuf) - 1);
 	struct IMGSENSOR_SENSOR *psensor =
-		&gimgsensor.sensor[IMGSENSOR_SENSOR_IDX_MAIN4];
+		imgsensor_proc_get_sensor(IMGSENSOR_SENSOR_IDX_MAIN4);
 
 	MSDK_SENSOR_REG_INFO_STRUCT sensorReg;
 
@@ -485,7 +500,7 @@ static ssize_t CAMERA_HW_Reg_Debug8(struct file *file, const char *buffer,
 	u32 u4CopyBufSize =
 		(count < (sizeof(regBuf) - 1)) ? (count) : (sizeof(regBuf) - 1);
 	struct IMGSENSOR_SENSOR *psensor =
-		&gimgsensor.sensor[IMGSENSOR_SENSOR_IDX_SUB4];
+		imgsensor_proc_get_sensor(IMGSENSOR_SENSOR_IDX_SUB4);
 
 	MSDK_SENSOR_REG_INFO_STRUCT sensorReg;
 
@@ -649,14 +664,22 @@ enum IMGSENSOR_RETURN imgsensor_proc_init(void)
 {
 	memset(mtk_ccm_name, 0, camera_info_size);
 
-	proc_create("driver/camsensor", 0000, NULL, &fcamera_proc_fops);
-	proc_create("driver/camsensor2", 0000, NULL, &fcamera_proc_fops2);
-	proc_create("driver/camsensor3", 0000, NULL, &fcamera_proc_fops3);
-	proc_create("driver/camsensor4", 0000, NULL, &fcamera_proc_fops4);
-	proc_create("driver/camsensor5", 0000, NULL, &fcamera_proc_fops5);
-	proc_create("driver/camsensor6", 0000, NULL, &fcamera_proc_fops6);
-	proc_create("driver/camsensor7", 0000, NULL, &fcamera_proc_fops7);
-	proc_create("driver/camsensor8", 0000, NULL, &fcamera_proc_fops8);
+	if (imgsensor_proc_sensor_valid(IMGSENSOR_SENSOR_IDX_MAIN))
+		proc_create("driver/camsensor", 0000, NULL, &fcamera_proc_fops);
+	if (imgsensor_proc_sensor_valid(IMGSENSOR_SENSOR_IDX_SUB))
+		proc_create("driver/camsensor2", 0000, NULL, &fcamera_proc_fops2);
+	if (imgsensor_proc_sensor_valid(IMGSENSOR_SENSOR_IDX_MAIN2))
+		proc_create("driver/camsensor3", 0000, NULL, &fcamera_proc_fops3);
+	if (imgsensor_proc_sensor_valid(IMGSENSOR_SENSOR_IDX_SUB2))
+		proc_create("driver/camsensor4", 0000, NULL, &fcamera_proc_fops4);
+	if (imgsensor_proc_sensor_valid(IMGSENSOR_SENSOR_IDX_MAIN3))
+		proc_create("driver/camsensor5", 0000, NULL, &fcamera_proc_fops5);
+	if (imgsensor_proc_sensor_valid(IMGSENSOR_SENSOR_IDX_SUB3))
+		proc_create("driver/camsensor6", 0000, NULL, &fcamera_proc_fops6);
+	if (imgsensor_proc_sensor_valid(IMGSENSOR_SENSOR_IDX_MAIN4))
+		proc_create("driver/camsensor7", 0000, NULL, &fcamera_proc_fops7);
+	if (imgsensor_proc_sensor_valid(IMGSENSOR_SENSOR_IDX_SUB4))
+		proc_create("driver/camsensor8", 0000, NULL, &fcamera_proc_fops8);
 	proc_create("driver/pdaf_type", 0000, NULL,
 				&fcamera_proc_fops_set_pdaf_type);
 	proc_create("driver/imgsensor_status_info", 0000, NULL,
@@ -670,14 +693,22 @@ enum IMGSENSOR_RETURN imgsensor_proc_init(void)
 
 void imgsensor_proc_exit(void)
 {
-	 remove_proc_entry("driver/camsensor", NULL);
-	 remove_proc_entry("driver/camsensor2", NULL);
-	 remove_proc_entry("driver/camsensor3", NULL);
-	 remove_proc_entry("driver/camsensor4", NULL);
-	 remove_proc_entry("driver/camsensor5", NULL);
-	 remove_proc_entry("driver/camsensor6", NULL);
-	 remove_proc_entry("driver/camsensor7", NULL);
-	 remove_proc_entry("driver/camsensor8", NULL);
+	 if (imgsensor_proc_sensor_valid(IMGSENSOR_SENSOR_IDX_MAIN))
+		 remove_proc_entry("driver/camsensor", NULL);
+	 if (imgsensor_proc_sensor_valid(IMGSENSOR_SENSOR_IDX_SUB))
+		 remove_proc_entry("driver/camsensor2", NULL);
+	 if (imgsensor_proc_sensor_valid(IMGSENSOR_SENSOR_IDX_MAIN2))
+		 remove_proc_entry("driver/camsensor3", NULL);
+	 if (imgsensor_proc_sensor_valid(IMGSENSOR_SENSOR_IDX_SUB2))
+		 remove_proc_entry("driver/camsensor4", NULL);
+	 if (imgsensor_proc_sensor_valid(IMGSENSOR_SENSOR_IDX_MAIN3))
+		 remove_proc_entry("driver/camsensor5", NULL);
+	 if (imgsensor_proc_sensor_valid(IMGSENSOR_SENSOR_IDX_SUB3))
+		 remove_proc_entry("driver/camsensor6", NULL);
+	 if (imgsensor_proc_sensor_valid(IMGSENSOR_SENSOR_IDX_MAIN4))
+		 remove_proc_entry("driver/camsensor7", NULL);
+	 if (imgsensor_proc_sensor_valid(IMGSENSOR_SENSOR_IDX_SUB4))
+		 remove_proc_entry("driver/camsensor8", NULL);
 	 remove_proc_entry("driver/pdaf_type", NULL);
 	 remove_proc_entry("driver/imgsensor_status_info", NULL);
 	 remove_proc_entry(PROC_CAMERA_INFO, NULL);
