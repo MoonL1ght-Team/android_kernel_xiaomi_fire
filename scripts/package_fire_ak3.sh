@@ -47,6 +47,7 @@ STRIP=${STRIP:-$(command -v llvm-strip || true)}
 FIRE66_BOOT_LAYOUT=${FIRE66_BOOT_LAYOUT:-hybrid}
 FIRE66_KERNEL_COMPRESSION=${FIRE66_KERNEL_COMPRESSION:-gzip}
 FIRE66_BOOT_CMDLINE=${FIRE66_BOOT_CMDLINE:-"bootopt=64S3,32N2,64N2"}
+FIRE66_VENDOR_CMDLINE=${FIRE66_VENDOR_CMDLINE:-}
 FIRE66_BASE_BOOT_IMG=${FIRE66_BASE_BOOT_IMG:-}
 FIRE66_BOOT_OS_VERSION=${FIRE66_BOOT_OS_VERSION:-16.0.0}
 FIRE66_BOOT_OS_PATCH_LEVEL=${FIRE66_BOOT_OS_PATCH_LEVEL:-2026-06}
@@ -68,21 +69,23 @@ VENDOR_BOOT_DTB_OFFSET=${VENDOR_BOOT_DTB_OFFSET:-0x0bc08000}
 VENDOR_BOOT_MAX_BYTES=${VENDOR_BOOT_MAX_BYTES:-67108864}
 
 case "$FIRE66_BOOT_LAYOUT" in
-	compat|hybrid|vendor_boot|boot_v3_vendor_boot) ;;
+	compat|hybrid|vendor_boot|boot_v3_vendor_boot|boot_v4_vendor_boot) ;;
 	*) die "unsupported FIRE66_BOOT_LAYOUT: $FIRE66_BOOT_LAYOUT" ;;
 esac
 case "$FIRE66_KERNEL_COMPRESSION" in
 	gzip) ;;
 	*) die "unsupported FIRE66_KERNEL_COMPRESSION: $FIRE66_KERNEL_COMPRESSION" ;;
 esac
-if [ "$FIRE66_BOOT_LAYOUT" = boot_v3_vendor_boot ] &&
+if { [ "$FIRE66_BOOT_LAYOUT" = boot_v3_vendor_boot ] ||
+	[ "$FIRE66_BOOT_LAYOUT" = boot_v4_vendor_boot ]; } &&
 	[ "$VENDOR_BOOT_PAGESIZE" != 4096 ]; then
 	die "Fire LK v3/v4 vendor_boot parser expects 4096-byte pages; got $VENDOR_BOOT_PAGESIZE"
 fi
 if [ -z "$AK3_FLASH_VENDOR_BOOT" ]; then
 	if [ "$FIRE66_BOOT_LAYOUT" = vendor_boot ] ||
 		[ "$FIRE66_BOOT_LAYOUT" = hybrid ] ||
-		[ "$FIRE66_BOOT_LAYOUT" = boot_v3_vendor_boot ]; then
+		[ "$FIRE66_BOOT_LAYOUT" = boot_v3_vendor_boot ] ||
+		[ "$FIRE66_BOOT_LAYOUT" = boot_v4_vendor_boot ]; then
 		AK3_FLASH_VENDOR_BOOT=1
 	else
 		AK3_FLASH_VENDOR_BOOT=0
@@ -106,8 +109,14 @@ need_tool cpio
 [ -x "$MKBOOTIMG" ] || die "mkbootimg not executable: $MKBOOTIMG"
 [ "$FIRE66_BOOT_LAYOUT" != boot_v3_vendor_boot ] || [ -x "$UNPACK_BOOTIMG" ] || \
 	die "unpack_bootimg not executable: $UNPACK_BOOTIMG"
-[ "$FIRE66_BOOT_LAYOUT" != boot_v3_vendor_boot ] || [ -f "$FIRE66_BASE_BOOT_IMG" ] || \
-	die "FIRE66_BASE_BOOT_IMG is required for boot_v3_vendor_boot layout"
+[ "$FIRE66_BOOT_LAYOUT" != boot_v4_vendor_boot ] || [ -x "$UNPACK_BOOTIMG" ] || \
+	die "unpack_bootimg not executable: $UNPACK_BOOTIMG"
+case "$FIRE66_BOOT_LAYOUT" in
+	boot_v3_vendor_boot|boot_v4_vendor_boot)
+		[ -f "$FIRE66_BASE_BOOT_IMG" ] ||
+			die "FIRE66_BASE_BOOT_IMG is required for $FIRE66_BOOT_LAYOUT layout"
+	;;
+esac
 [ "$STRIP_DEBUG_MODULES" != 1 ] || [ -x "$STRIP" ] || die "llvm-strip not executable: $STRIP"
 [ -d "$KERNEL_SRC" ] || die "kernel source not found: $KERNEL_SRC"
 [ -d "$DEVICE_MODULES_SRC" ] || die "device module source not found: $DEVICE_MODULES_SRC"
@@ -326,17 +335,21 @@ done
 
 build_vendor_boot() {
 	local vendor_ramdisk=$1
+	local header_version=3
 	local vendor_boot_size
+
+	[ "$FIRE66_BOOT_LAYOUT" != boot_v4_vendor_boot ] || header_version=4
 
 	echo "==> Building Fire vendor_boot"
 	"$MKBOOTIMG" \
-		--header_version 3 \
+		--header_version "$header_version" \
 		--pagesize "$VENDOR_BOOT_PAGESIZE" \
 		--base "$VENDOR_BOOT_BASE" \
 		--kernel_offset "$VENDOR_BOOT_KERNEL_OFFSET" \
 		--ramdisk_offset "$VENDOR_BOOT_RAMDISK_OFFSET" \
 		--tags_offset "$VENDOR_BOOT_TAGS_OFFSET" \
 		--dtb_offset "$VENDOR_BOOT_DTB_OFFSET" \
+		--vendor_cmdline "$FIRE66_VENDOR_CMDLINE" \
 		--vendor_ramdisk "$vendor_ramdisk" \
 		--dtb "${DT_OUT}/mt6768.dtb" \
 		--vendor_boot "${DT_OUT}/vendor_boot.img" \
@@ -346,14 +359,16 @@ build_vendor_boot() {
 		die "vendor_boot.img is larger than ${VENDOR_BOOT_MAX_BYTES} bytes"
 }
 
-build_fire_boot_v3() {
+build_fire_boot_v3_v4() {
 	local base_boot_dir="${WORK_DIR}/base_boot"
+	local header_version=3
 	local boot_size
 
 	[ -f "$FIRE66_BASE_BOOT_IMG" ] ||
-		die "FIRE66_BASE_BOOT_IMG is required for boot_v3_vendor_boot layout"
+		die "FIRE66_BASE_BOOT_IMG is required for $FIRE66_BOOT_LAYOUT layout"
+	[ "$FIRE66_BOOT_LAYOUT" != boot_v4_vendor_boot ] || header_version=4
 
-	echo "==> Building Fire boot.img header v3"
+	echo "==> Building Fire boot.img header v${header_version}"
 	rm -rf "$base_boot_dir"
 	mkdir -p "$base_boot_dir"
 	"$UNPACK_BOOTIMG" --boot_img "$FIRE66_BASE_BOOT_IMG" --out "$base_boot_dir" \
@@ -362,7 +377,8 @@ build_fire_boot_v3() {
 		die "base boot image has no ramdisk: $FIRE66_BASE_BOOT_IMG"
 
 	"$MKBOOTIMG" \
-		--header_version 3 \
+		--header_version "$header_version" \
+		--pagesize "$VENDOR_BOOT_PAGESIZE" \
 		--kernel "$BOOT_IMAGE_STAGE" \
 		--ramdisk "${base_boot_dir}/ramdisk" \
 		--cmdline "$FIRE66_BOOT_CMDLINE" \
@@ -390,7 +406,8 @@ fi
 rm -rf "${STAGE}/modules"
 mkdir -p "$MOD_DST"
 if [ "$SKIP_AK3" != 1 ]; then
-	if [ "$FIRE66_BOOT_LAYOUT" != boot_v3_vendor_boot ]; then
+	if [ "$FIRE66_BOOT_LAYOUT" != boot_v3_vendor_boot ] &&
+		[ "$FIRE66_BOOT_LAYOUT" != boot_v4_vendor_boot ]; then
 		cp -f "$BOOT_IMAGE_STAGE" "${STAGE}/${BOOT_IMAGE_NAME}"
 	fi
 	if [ "$FIRE66_BOOT_LAYOUT" = compat ] || [ "$FIRE66_BOOT_LAYOUT" = hybrid ]; then
@@ -644,14 +661,20 @@ build_first_stage_vendor_ramdisk() {
 
 build_first_stage_vendor_ramdisk
 build_vendor_boot "${DT_OUT}/vendor-ramdisk.cpio.gz"
-if [ "$FIRE66_BOOT_LAYOUT" = boot_v3_vendor_boot ]; then
-	build_fire_boot_v3
-fi
+case "$FIRE66_BOOT_LAYOUT" in
+	boot_v3_vendor_boot|boot_v4_vendor_boot)
+		build_fire_boot_v3_v4
+	;;
+esac
 if [ "$SKIP_AK3" != 1 ] && [ "$AK3_FLASH_VENDOR_BOOT" = 1 ]; then
 	cp -f "${DT_OUT}/vendor_boot.img" "${STAGE}/vendor_boot.img"
 fi
-if [ "$SKIP_AK3" != 1 ] && [ "$FIRE66_BOOT_LAYOUT" = boot_v3_vendor_boot ]; then
-	cp -f "${DT_OUT}/boot.img" "${STAGE}/boot.img"
+if [ "$SKIP_AK3" != 1 ]; then
+	case "$FIRE66_BOOT_LAYOUT" in
+		boot_v3_vendor_boot|boot_v4_vendor_boot)
+			cp -f "${DT_OUT}/boot.img" "${STAGE}/boot.img"
+		;;
+	esac
 fi
 
 echo "==> Exporting ROM artifacts"
@@ -724,8 +747,8 @@ PATCH_VBMETA_FLAG=auto;
 FIRE66_BOOT_LAYOUT="__FIRE66_BOOT_LAYOUT__";
 
 # compat and hybrid keep the boot-header-v2 DTB path for the Fire LK. The
-# vendor_boot-only layout removes the old boot DTB and only works with a LK that
-# consumes the vendor_boot DTB directly.
+# boot_v3/boot_v4 vendor_boot layouts flash prebuilt boot/vendor_boot images
+# and rely on LK to consume the vendor_boot DTB and vendor ramdisk directly.
 if [ "$FIRE66_BOOT_LAYOUT" = compat ] || [ "$FIRE66_BOOT_LAYOUT" = hybrid ]; then
 	touch vendor_v3_setup;
 fi;
@@ -791,9 +814,9 @@ assert_boot_dtbo_pair() {
 			ak_partition_exists vendor_boot ||
 				abort "vendor_boot partition was not found. Aborting to keep dtbo/vendor_boot in sync...";
 		;;
-		boot_v3_vendor_boot)
+		boot_v3_vendor_boot|boot_v4_vendor_boot)
 			[ -f boot.img ] ||
-				abort "boot_v3_vendor_boot layout selected but boot.img is missing. Aborting...";
+				abort "$FIRE66_BOOT_LAYOUT layout selected but boot.img is missing. Aborting...";
 			[ -f vendor_boot.img ] ||
 				abort "dtbo.img is present without matching vendor_boot.img. Aborting to avoid LK overlay crash...";
 			ak_partition_exists vendor_boot ||
@@ -826,14 +849,14 @@ prepare_fire66_boot_layout() {
 			done;
 			ui_print " " "Fire 6.6 layout: DTB will be provided by vendor_boot.";
 		;;
-		boot_v3_vendor_boot)
+		boot_v3_vendor_boot|boot_v4_vendor_boot)
 			[ -f boot.img ] ||
-				abort "boot_v3_vendor_boot layout selected but boot.img is missing. Aborting...";
+				abort "$FIRE66_BOOT_LAYOUT layout selected but boot.img is missing. Aborting...";
 			[ -f vendor_boot.img ] ||
-				abort "boot_v3_vendor_boot layout selected but vendor_boot.img is missing. Aborting...";
+				abort "$FIRE66_BOOT_LAYOUT layout selected but vendor_boot.img is missing. Aborting...";
 			ak_partition_exists vendor_boot ||
 				abort "vendor_boot partition was not found. Aborting...";
-			ui_print " " "Fire 6.6 layout: flashing boot header v3 with vendor_boot ramdisk.";
+			ui_print " " "Fire 6.6 layout: flashing prebuilt boot/vendor_boot GKI pair.";
 		;;
 		compat)
 			ui_print " " "Fire 6.6 layout: keeping DTB in boot.img compatibility path.";
@@ -1051,10 +1074,12 @@ MODULE_EOF
 }
 
 cd "$AKHOME";
-if [ "$FIRE66_BOOT_LAYOUT" = boot_v3_vendor_boot ]; then
+case "$FIRE66_BOOT_LAYOUT" in
+boot_v3_vendor_boot|boot_v4_vendor_boot)
 	flash_fire66_prebuilt_boot_pair;
 	exit 0;
-fi;
+;;
+esac;
 
 dump_boot;
 cd "$AKHOME";
