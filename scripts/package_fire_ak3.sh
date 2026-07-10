@@ -43,8 +43,10 @@ CPP=${CPP:-$(command -v cpp || true)}
 DTC=${DTC:-$(command -v dtc || true)}
 FDTOVERLAY=${FDTOVERLAY:-$(command -v fdtoverlay || true)}
 STRIP=${STRIP:-$(command -v llvm-strip || true)}
-AK3_FLASH_DTBO=${AK3_FLASH_DTBO:-0}
-AK3_FLASH_VENDOR_BOOT=${AK3_FLASH_VENDOR_BOOT:-0}
+FIRE66_BOOT_LAYOUT=${FIRE66_BOOT_LAYOUT:-vendor_boot}
+FIRE66_KERNEL_COMPRESSION=${FIRE66_KERNEL_COMPRESSION:-gzip}
+AK3_FLASH_DTBO=${AK3_FLASH_DTBO:-1}
+AK3_FLASH_VENDOR_BOOT=${AK3_FLASH_VENDOR_BOOT:-}
 LEGACY_DTBO_COMPAT=${LEGACY_DTBO_COMPAT:-${AK3_TEMPLATE}/dtbo.img}
 DTBO_ENTRY_COUNT=${DTBO_ENTRY_COUNT:-4}
 LK_DTB_COMPAT=${LK_DTB_COMPAT:-}
@@ -54,6 +56,22 @@ VENDOR_BOOT_PAGESIZE=${VENDOR_BOOT_PAGESIZE:-2048}
 VENDOR_BOOT_BASE=${VENDOR_BOOT_BASE:-0x40000000}
 VENDOR_BOOT_DTB_OFFSET=${VENDOR_BOOT_DTB_OFFSET:-0x0bc80000}
 VENDOR_BOOT_MAX_BYTES=${VENDOR_BOOT_MAX_BYTES:-67108864}
+
+case "$FIRE66_BOOT_LAYOUT" in
+	compat|vendor_boot) ;;
+	*) die "unsupported FIRE66_BOOT_LAYOUT: $FIRE66_BOOT_LAYOUT" ;;
+esac
+case "$FIRE66_KERNEL_COMPRESSION" in
+	gzip|lz4) ;;
+	*) die "unsupported FIRE66_KERNEL_COMPRESSION: $FIRE66_KERNEL_COMPRESSION" ;;
+esac
+if [ -z "$AK3_FLASH_VENDOR_BOOT" ]; then
+	if [ "$FIRE66_BOOT_LAYOUT" = vendor_boot ]; then
+		AK3_FLASH_VENDOR_BOOT=1
+	else
+		AK3_FLASH_VENDOR_BOOT=0
+	fi
+fi
 
 if [ "$SKIP_AK3" != 1 ]; then
 	need_tool rsync
@@ -90,12 +108,18 @@ IMAGE=$(
 if [ -z "$IMAGE" ]; then
 	IMAGE=$(find "$DEVICE_BIN" -path "*/${PROJECT}*${MODE}*/Image.lz4" -type f | head -n1)
 fi
-[ -n "$IMAGE" ] || die "Image.lz4 was not found under $DEVICE_BIN"
+[ -n "$IMAGE" ] || die "kernel Image was not found under $DEVICE_BIN"
 
 BOOT_IMAGE_GZ=$(
 	first_file \
 		"${DEVICE_BIN}/${PROJECT}_kernel_aarch64.${MODE}/Image.gz" \
 		"${DEVICE_BIN}/${PROJECT}.${MODE}_kbuild_mixed_tree/Image.gz" \
+	|| true
+)
+BOOT_IMAGE_LZ4=$(
+	first_file \
+		"${DEVICE_BIN}/${PROJECT}_kernel_aarch64.${MODE}/Image.lz4" \
+		"${DEVICE_BIN}/${PROJECT}.${MODE}_kbuild_mixed_tree/Image.lz4" \
 	|| true
 )
 
@@ -121,22 +145,48 @@ ZIP_PATH="${DIST_DIR}/MoonLightKernel-fire-GKI-6.6-AK3-${STAMP}.zip"
 rm -rf "$WORK_DIR"
 mkdir -p "$STAGE" "$DT_OUT" "$MOD_DST" "$DIST_DIR"
 
-if [ -z "$BOOT_IMAGE_GZ" ]; then
-	BOOT_IMAGE_GZ="${DT_OUT}/Image.gz"
-	case "$IMAGE" in
-		*.lz4)
-			need_tool lz4
-			lz4 -dc "$IMAGE" | gzip -n -9 > "$BOOT_IMAGE_GZ"
-		;;
-		*.gz)
-			cp -f "$IMAGE" "$BOOT_IMAGE_GZ"
-		;;
-		*)
-			gzip -n -9 < "$IMAGE" > "$BOOT_IMAGE_GZ"
-		;;
-	esac
-fi
-gzip -t "$BOOT_IMAGE_GZ" || die "boot kernel gzip validation failed: $BOOT_IMAGE_GZ"
+case "$FIRE66_KERNEL_COMPRESSION" in
+	gzip)
+		if [ -z "$BOOT_IMAGE_GZ" ]; then
+			BOOT_IMAGE_GZ="${DT_OUT}/Image.gz"
+			case "$IMAGE" in
+				*.lz4)
+					need_tool lz4
+					lz4 -dc "$IMAGE" | gzip -n -9 > "$BOOT_IMAGE_GZ"
+				;;
+				*.gz)
+					cp -f "$IMAGE" "$BOOT_IMAGE_GZ"
+				;;
+				*)
+					gzip -n -9 < "$IMAGE" > "$BOOT_IMAGE_GZ"
+				;;
+			esac
+		fi
+		gzip -t "$BOOT_IMAGE_GZ" || die "boot kernel gzip validation failed: $BOOT_IMAGE_GZ"
+		BOOT_IMAGE_STAGE=$BOOT_IMAGE_GZ
+		BOOT_IMAGE_NAME=Image.gz
+	;;
+	lz4)
+		need_tool lz4
+		if [ -z "$BOOT_IMAGE_LZ4" ]; then
+			BOOT_IMAGE_LZ4="${DT_OUT}/Image.lz4"
+			case "$IMAGE" in
+				*.lz4)
+					cp -f "$IMAGE" "$BOOT_IMAGE_LZ4"
+				;;
+				*.gz)
+					gzip -dc "$IMAGE" | lz4 -l -12 - "$BOOT_IMAGE_LZ4"
+				;;
+				*)
+					lz4 -l -12 "$IMAGE" "$BOOT_IMAGE_LZ4"
+				;;
+			esac
+		fi
+		lz4 -q -t "$BOOT_IMAGE_LZ4" || die "boot kernel lz4 validation failed: $BOOT_IMAGE_LZ4"
+		BOOT_IMAGE_STAGE=$BOOT_IMAGE_LZ4
+		BOOT_IMAGE_NAME=Image.lz4
+	;;
+esac
 
 echo "==> Building Fire dtb/dtbo"
 dt_include_args=(
@@ -282,8 +332,10 @@ fi
 rm -rf "${STAGE}/modules"
 mkdir -p "$MOD_DST"
 if [ "$SKIP_AK3" != 1 ]; then
-	cp -f "$BOOT_IMAGE_GZ" "${STAGE}/Image.gz"
-	cp -f "${DT_OUT}/mt6768.dtb" "${STAGE}/dtb"
+	cp -f "$BOOT_IMAGE_STAGE" "${STAGE}/${BOOT_IMAGE_NAME}"
+	if [ "$FIRE66_BOOT_LAYOUT" = compat ]; then
+		cp -f "${DT_OUT}/mt6768.dtb" "${STAGE}/dtb"
+	fi
 	if [ "$AK3_FLASH_DTBO" = 1 ]; then
 		cp -f "${DT_OUT}/dtbo.img" "${STAGE}/dtbo.img"
 	fi
@@ -458,9 +510,13 @@ generate_module_metadata
 echo "==> Exporting ROM artifacts"
 rm -rf "$ROM_ARTIFACTS_DIR"
 mkdir -p "${ROM_ARTIFACTS_DIR}/modules/vendor/lib/modules"
-cp -f "$BOOT_IMAGE_GZ" "${ROM_ARTIFACTS_DIR}/Image.gz"
+cp -f "$BOOT_IMAGE_STAGE" "${ROM_ARTIFACTS_DIR}/${BOOT_IMAGE_NAME}"
+[ "$BOOT_IMAGE_NAME" = Image.gz ] || [ -z "$BOOT_IMAGE_GZ" ] || \
+	cp -f "$BOOT_IMAGE_GZ" "${ROM_ARTIFACTS_DIR}/Image.gz"
+[ "$BOOT_IMAGE_NAME" = Image.lz4 ] || [ -z "$BOOT_IMAGE_LZ4" ] || \
+	cp -f "$BOOT_IMAGE_LZ4" "${ROM_ARTIFACTS_DIR}/Image.lz4"
 case "$(basename "$IMAGE")" in
-	Image.lz4|Image)
+	Image)
 		cp -f "$IMAGE" "${ROM_ARTIFACTS_DIR}/$(basename "$IMAGE")"
 	;;
 esac
@@ -517,11 +573,12 @@ IS_SLOT_DEVICE=1;
 RAMDISK_COMPRESSION=auto;
 PATCH_VBMETA_FLAG=auto;
 
-# The current Fire boot chain uses boot header v2 with dtb in boot.img. Keep
-# AnyKernel3 from moving the dtb to vendor_boot automatically; generated
-# dtbo/vendor_boot images are staged only when package_fire_ak3.sh is invoked
-# with AK3_FLASH_DTBO=1 and/or AK3_FLASH_VENDOR_BOOT=1.
-touch vendor_v3_setup;
+FIRE66_BOOT_LAYOUT="__FIRE66_BOOT_LAYOUT__";
+
+# compat keeps the old boot-header-v2 DTB path for fallback packages. The
+# default vendor_boot layout flashes a prebuilt vendor_boot.img and removes the
+# old boot DTB during install so LK consumes the vendor_boot DTB instead.
+[ "$FIRE66_BOOT_LAYOUT" = compat ] && touch vendor_v3_setup;
 
 . tools/ak3-core.sh;
 
@@ -561,8 +618,63 @@ ak_has_space_for_copy() {
 }
 
 assert_boot_dtbo_pair() {
-	if [ -f dtbo.img ] && [ ! -f dtb ]; then
-		abort "dtbo.img is present without matching boot dtb. Aborting to avoid LK overlay crash...";
+	if [ ! -f dtbo.img ]; then
+		return 0;
+	fi;
+
+	case "$FIRE66_BOOT_LAYOUT" in
+		compat)
+			[ -f dtb ] ||
+				abort "dtbo.img is present without matching boot dtb. Aborting to avoid LK overlay crash...";
+		;;
+		vendor_boot)
+			[ -f vendor_boot.img ] ||
+				abort "dtbo.img is present without matching vendor_boot.img. Aborting to avoid LK overlay crash...";
+			ak_partition_exists vendor_boot ||
+				abort "vendor_boot partition was not found. Aborting to keep dtbo/vendor_boot in sync...";
+		;;
+		*)
+			abort "Unsupported Fire 6.6 boot layout: $FIRE66_BOOT_LAYOUT";
+		;;
+	esac;
+}
+
+prepare_fire66_boot_layout() {
+	case "$FIRE66_BOOT_LAYOUT" in
+		vendor_boot)
+			[ -f vendor_boot.img ] ||
+				abort "vendor_boot layout selected but vendor_boot.img is missing. Aborting...";
+			ak_partition_exists vendor_boot ||
+				abort "vendor_boot partition was not found. Aborting...";
+
+			rm -f dtb dtb.img;
+			for fdt in \
+				"$SPLITIMG/dt" \
+				"$SPLITIMG/dtb" \
+				"$SPLITIMG/extra" \
+				"$SPLITIMG/kernel_dtb" \
+				"$SPLITIMG/recovery_dtbo" \
+				"$SPLITIMG/boot.img-dt" \
+				"$SPLITIMG/boot.img-dtb"; do
+				rm -f "$fdt";
+			done;
+			ui_print " " "Fire 6.6 layout: DTB will be provided by vendor_boot.";
+		;;
+		compat)
+			ui_print " " "Fire 6.6 layout: keeping DTB in boot.img compatibility path.";
+		;;
+		*)
+			abort "Unsupported Fire 6.6 boot layout: $FIRE66_BOOT_LAYOUT";
+		;;
+	esac;
+}
+
+drop_unrequested_vendor_boot() {
+	if [ -f vendor_boot.img ] && ! ak_partition_exists vendor_boot; then
+		if [ "$FIRE66_BOOT_LAYOUT" = vendor_boot ]; then
+			abort "vendor_boot partition was not found. Aborting...";
+		fi;
+		rm -f vendor_boot.img;
 	fi;
 }
 
@@ -745,13 +857,15 @@ MODULE_EOF
 }
 
 dump_boot;
+prepare_fire66_boot_layout;
 normalize_fire66_boot_cmdline;
 patch_ramdisk_module_loaders;
 assert_boot_dtbo_pair;
 install_vendor_modules;
-ak_partition_exists vendor_boot || rm -f vendor_boot.img;
+drop_unrequested_vendor_boot;
 write_boot;
 AK3_EOF
+	sed -i "s|__FIRE66_BOOT_LAYOUT__|${FIRE66_BOOT_LAYOUT}|g" "${STAGE}/anykernel.sh"
 	chmod 755 "${STAGE}/anykernel.sh"
 
 	echo "==> Creating AK3 zip"
