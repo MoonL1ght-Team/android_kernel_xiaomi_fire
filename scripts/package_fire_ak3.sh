@@ -61,6 +61,7 @@ LK_DTB_COMPAT=${LK_DTB_COMPAT:-}
 SKIP_AK3=${SKIP_AK3:-0}
 STRIP_DEBUG_MODULES=${STRIP_DEBUG_MODULES:-1}
 FIRST_STAGE_VENDOR_BOOT_MODULES=${FIRST_STAGE_VENDOR_BOOT_MODULES:-"mtk-pmic-wrap.ko mt6358-regulator.ko clk-mt6768.ko clk-mt6768-pg.ko pinctrl-mt6768.ko mtk-mmc.ko"}
+FIRE66_VENDOR_BOOTCONFIG_STATIC=${FIRE66_VENDOR_BOOTCONFIG_STATIC:-0}
 VENDOR_BOOT_PAGESIZE=${VENDOR_BOOT_PAGESIZE:-4096}
 VENDOR_BOOT_BASE=${VENDOR_BOOT_BASE:-0x40078000}
 VENDOR_BOOT_KERNEL_OFFSET=${VENDOR_BOOT_KERNEL_OFFSET:-0x00008000}
@@ -74,11 +75,34 @@ case "$FIRE66_BOOT_LAYOUT" in
 	*) die "unsupported FIRE66_BOOT_LAYOUT: $FIRE66_BOOT_LAYOUT" ;;
 esac
 if [ -z "${FIRE66_BOOTCONFIG+x}" ]; then
-	if [ "$FIRE66_BOOT_LAYOUT" = boot_v4_vendor_boot ]; then
+	case "$FIRE66_BOOT_LAYOUT" in
+	boot_v3_vendor_boot|boot_v4_vendor_boot)
 		FIRE66_BOOTCONFIG="androidboot.init_fatal_reboot_target=recovery"
-	else
+	;;
+	*)
 		FIRE66_BOOTCONFIG=
-	fi
+	;;
+	esac
+fi
+if [ -z "${FIRE66_BOOT_RAMDISK_VENDOR_MODULES+x}" ]; then
+	case "$FIRE66_BOOT_LAYOUT" in
+	boot_v3_vendor_boot|boot_v4_vendor_boot)
+		FIRE66_BOOT_RAMDISK_VENDOR_MODULES=1
+	;;
+	*)
+		FIRE66_BOOT_RAMDISK_VENDOR_MODULES=0
+	;;
+	esac
+fi
+if [ -z "${FIRE66_BOOTCONFIG_IN_BOOT_RAMDISK+x}" ]; then
+	case "$FIRE66_BOOT_LAYOUT" in
+	boot_v3_vendor_boot|boot_v4_vendor_boot)
+		FIRE66_BOOTCONFIG_IN_BOOT_RAMDISK=1
+	;;
+	*)
+		FIRE66_BOOTCONFIG_IN_BOOT_RAMDISK=0
+	;;
+	esac
 fi
 case "$FIRE66_KERNEL_COMPRESSION" in
 	gzip) ;;
@@ -172,6 +196,15 @@ CONFIG_OUT=$(
 	done
 )
 [ -n "$CONFIG_OUT" ] || die "generated config include directory was not found"
+
+FINAL_CONFIG="${CONFIG_OUT}/.config"
+[ -f "$FINAL_CONFIG" ] || die "generated kernel .config was not found: $FINAL_CONFIG"
+if [ "$PROJECT" = mgk_64_k66 ]; then
+	grep -qx 'CONFIG_PROJECT_FIRE=y' "$FINAL_CONFIG" ||
+		die "generated .config is not a Fire config: $FINAL_CONFIG"
+	grep -qx 'CONFIG_MMC_BLOCK_MINORS=32' "$FINAL_CONFIG" ||
+		die "Fire requires CONFIG_MMC_BLOCK_MINORS=32 for high GPT partition minors: $FINAL_CONFIG"
+fi
 
 STAMP=${STAMP:-$(date +%Y%m%d-%H%M%S)}
 WORK_DIR="${STAGE_BASE}/${STAMP}"
@@ -348,7 +381,7 @@ build_vendor_boot() {
 	local -a vendor_bootconfig_args=()
 
 	[ "$FIRE66_BOOT_LAYOUT" != boot_v4_vendor_boot ] || header_version=4
-	if [ "$header_version" = 4 ]; then
+	if [ "$header_version" = 4 ] && [ "$FIRE66_VENDOR_BOOTCONFIG_STATIC" = 1 ]; then
 		if [ -n "$FIRE66_BOOTCONFIG_FILE" ]; then
 			[ -f "$FIRE66_BOOTCONFIG_FILE" ] ||
 				die "FIRE66_BOOTCONFIG_FILE not found: $FIRE66_BOOTCONFIG_FILE"
@@ -362,8 +395,8 @@ build_vendor_boot() {
 		if [ -n "$vendor_bootconfig_file" ]; then
 			vendor_bootconfig_args=(--vendor_bootconfig "$vendor_bootconfig_file")
 		fi
-	elif [ -n "$FIRE66_BOOTCONFIG_FILE" ] || [ -n "$FIRE66_BOOTCONFIG" ]; then
-		die "vendor bootconfig requires boot_v4_vendor_boot layout"
+	elif [ "$FIRE66_VENDOR_BOOTCONFIG_STATIC" = 1 ]; then
+		die "static vendor bootconfig requires boot_v4_vendor_boot layout"
 	fi
 
 	echo "==> Building Fire vendor_boot"
@@ -386,9 +419,88 @@ build_vendor_boot() {
 		die "vendor_boot.img is larger than ${VENDOR_BOOT_MAX_BYTES} bytes"
 }
 
+prepare_bootconfig_file() {
+	local out=$1
+
+	if [ -n "$FIRE66_BOOTCONFIG_FILE" ]; then
+		[ -f "$FIRE66_BOOTCONFIG_FILE" ] ||
+			die "FIRE66_BOOTCONFIG_FILE not found: $FIRE66_BOOTCONFIG_FILE"
+		cp -f "$FIRE66_BOOTCONFIG_FILE" "$out"
+	elif [ -n "$FIRE66_BOOTCONFIG" ]; then
+		printf '%s\n' "$FIRE66_BOOTCONFIG" > "$out"
+	else
+		return 1
+	fi
+}
+
+append_bootconfig_trailer() {
+	local ramdisk=$1
+	local bootconfig=$2
+	local out=$3
+
+	need_tool python3
+	python3 - "$ramdisk" "$bootconfig" "$out" <<'PY'
+import pathlib
+import struct
+import sys
+
+ramdisk = pathlib.Path(sys.argv[1])
+bootconfig = pathlib.Path(sys.argv[2])
+out = pathlib.Path(sys.argv[3])
+
+payload = bootconfig.read_bytes()
+if payload and not payload.endswith(b"\n"):
+    payload += b"\n"
+padding = b"\0" * ((4 - (len(payload) % 4)) % 4)
+checksum = sum(payload) & 0xFFFFFFFF
+trailer = payload + padding + struct.pack("<II", len(payload), checksum) + b"#BOOTCONFIG\n"
+out.write_bytes(ramdisk.read_bytes() + trailer)
+PY
+}
+
+build_boot_ramdisk() {
+	local base_ramdisk=$1
+	local vendor_ramdisk=$2
+	local out=$3
+	local ramdisk_dir="${WORK_DIR}/boot_ramdisk"
+	local staged="${DT_OUT}/boot-ramdisk.base.cpio.gz"
+	local bootconfig_file="${DT_OUT}/fire66.bootconfig"
+
+	cp -f "$base_ramdisk" "$staged"
+
+	if [ "$FIRE66_BOOT_RAMDISK_VENDOR_MODULES" = 1 ]; then
+		echo "==> Merging Fire first-stage modules into boot ramdisk"
+		rm -rf "$ramdisk_dir"
+		mkdir -p "$ramdisk_dir"
+		(
+			cd "$ramdisk_dir"
+			gzip -dc "$base_ramdisk" |
+				cpio -idmu --no-absolute-filenames \
+					2> "${DT_OUT}/boot-ramdisk-base.cpio.log"
+			gzip -dc "$vendor_ramdisk" |
+				cpio -idmu --no-absolute-filenames \
+					2> "${DT_OUT}/boot-ramdisk-vendor.cpio.log"
+			find . -print0 | LC_ALL=C sort -z |
+				cpio --null -o -H newc --owner root:root \
+					2> "${DT_OUT}/boot-ramdisk.cpio.log" |
+				gzip -n -9 > "$staged"
+		)
+	fi
+
+	if [ "$FIRE66_BOOTCONFIG_IN_BOOT_RAMDISK" = 1 ] &&
+		prepare_bootconfig_file "$bootconfig_file"; then
+		echo "==> Appending Fire bootconfig trailer to boot ramdisk"
+		append_bootconfig_trailer "$staged" "$bootconfig_file" "$out"
+	else
+		cp -f "$staged" "$out"
+	fi
+}
+
 build_fire_boot_v3_v4() {
+	local vendor_ramdisk=$1
 	local base_boot_dir="${WORK_DIR}/base_boot"
 	local header_version=3
+	local boot_ramdisk="${DT_OUT}/boot-ramdisk.cpio.gz"
 	local boot_size
 
 	[ -f "$FIRE66_BASE_BOOT_IMG" ] ||
@@ -402,12 +514,13 @@ build_fire_boot_v3_v4() {
 		> "${DT_OUT}/unpack-base-boot.log" 2>&1
 	[ -f "${base_boot_dir}/ramdisk" ] ||
 		die "base boot image has no ramdisk: $FIRE66_BASE_BOOT_IMG"
+	build_boot_ramdisk "${base_boot_dir}/ramdisk" "$vendor_ramdisk" "$boot_ramdisk"
 
 	"$MKBOOTIMG" \
 		--header_version "$header_version" \
 		--pagesize "$VENDOR_BOOT_PAGESIZE" \
 		--kernel "$BOOT_IMAGE_STAGE" \
-		--ramdisk "${base_boot_dir}/ramdisk" \
+		--ramdisk "$boot_ramdisk" \
 		--cmdline "$FIRE66_BOOT_CMDLINE" \
 		--os_version "$FIRE66_BOOT_OS_VERSION" \
 		--os_patch_level "$FIRE66_BOOT_OS_PATCH_LEVEL" \
@@ -690,7 +803,7 @@ build_first_stage_vendor_ramdisk
 build_vendor_boot "${DT_OUT}/vendor-ramdisk.cpio.gz"
 case "$FIRE66_BOOT_LAYOUT" in
 	boot_v3_vendor_boot|boot_v4_vendor_boot)
-		build_fire_boot_v3_v4
+		build_fire_boot_v3_v4 "${DT_OUT}/vendor-ramdisk.cpio.gz"
 	;;
 esac
 if [ "$SKIP_AK3" != 1 ] && [ "$AK3_FLASH_VENDOR_BOOT" = 1 ]; then
