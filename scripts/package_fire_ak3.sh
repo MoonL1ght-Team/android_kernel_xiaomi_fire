@@ -43,12 +43,12 @@ CPP=${CPP:-$(command -v cpp || true)}
 DTC=${DTC:-$(command -v dtc || true)}
 FDTOVERLAY=${FDTOVERLAY:-$(command -v fdtoverlay || true)}
 STRIP=${STRIP:-$(command -v llvm-strip || true)}
-FIRE66_BOOT_LAYOUT=${FIRE66_BOOT_LAYOUT:-vendor_boot}
+FIRE66_BOOT_LAYOUT=${FIRE66_BOOT_LAYOUT:-hybrid}
 FIRE66_KERNEL_COMPRESSION=${FIRE66_KERNEL_COMPRESSION:-gzip}
 AK3_FLASH_DTBO=${AK3_FLASH_DTBO:-1}
 AK3_FLASH_VENDOR_BOOT=${AK3_FLASH_VENDOR_BOOT:-}
 LEGACY_DTBO_COMPAT=${LEGACY_DTBO_COMPAT:-${AK3_TEMPLATE}/dtbo.img}
-DTBO_ENTRY_COUNT=${DTBO_ENTRY_COUNT:-5}
+DTBO_ENTRY_COUNT=${DTBO_ENTRY_COUNT:-1}
 LK_DTB_COMPAT=${LK_DTB_COMPAT:-}
 SKIP_AK3=${SKIP_AK3:-0}
 STRIP_DEBUG_MODULES=${STRIP_DEBUG_MODULES:-1}
@@ -58,7 +58,7 @@ VENDOR_BOOT_DTB_OFFSET=${VENDOR_BOOT_DTB_OFFSET:-0x0bc80000}
 VENDOR_BOOT_MAX_BYTES=${VENDOR_BOOT_MAX_BYTES:-67108864}
 
 case "$FIRE66_BOOT_LAYOUT" in
-	compat|vendor_boot) ;;
+	compat|hybrid|vendor_boot) ;;
 	*) die "unsupported FIRE66_BOOT_LAYOUT: $FIRE66_BOOT_LAYOUT" ;;
 esac
 case "$FIRE66_KERNEL_COMPRESSION" in
@@ -66,7 +66,7 @@ case "$FIRE66_KERNEL_COMPRESSION" in
 	*) die "unsupported FIRE66_KERNEL_COMPRESSION: $FIRE66_KERNEL_COMPRESSION" ;;
 esac
 if [ -z "$AK3_FLASH_VENDOR_BOOT" ]; then
-	if [ "$FIRE66_BOOT_LAYOUT" = vendor_boot ]; then
+	if [ "$FIRE66_BOOT_LAYOUT" = vendor_boot ] || [ "$FIRE66_BOOT_LAYOUT" = hybrid ]; then
 		AK3_FLASH_VENDOR_BOOT=1
 	else
 		AK3_FLASH_VENDOR_BOOT=0
@@ -333,7 +333,7 @@ rm -rf "${STAGE}/modules"
 mkdir -p "$MOD_DST"
 if [ "$SKIP_AK3" != 1 ]; then
 	cp -f "$BOOT_IMAGE_STAGE" "${STAGE}/${BOOT_IMAGE_NAME}"
-	if [ "$FIRE66_BOOT_LAYOUT" = compat ]; then
+	if [ "$FIRE66_BOOT_LAYOUT" = compat ] || [ "$FIRE66_BOOT_LAYOUT" = hybrid ]; then
 		cp -f "${DT_OUT}/mt6768.dtb" "${STAGE}/dtb"
 	fi
 	if [ "$AK3_FLASH_DTBO" = 1 ]; then
@@ -575,14 +575,16 @@ PATCH_VBMETA_FLAG=auto;
 
 FIRE66_BOOT_LAYOUT="__FIRE66_BOOT_LAYOUT__";
 
-# compat keeps the old boot-header-v2 DTB path for fallback packages. The
-# default vendor_boot layout flashes a prebuilt vendor_boot.img and removes the
-# old boot DTB during install so LK consumes the vendor_boot DTB instead.
-[ "$FIRE66_BOOT_LAYOUT" = compat ] && touch vendor_v3_setup;
+# compat and hybrid keep the boot-header-v2 DTB path for the Fire LK. The
+# vendor_boot-only layout removes the old boot DTB and only works with a LK that
+# consumes the vendor_boot DTB directly.
+if [ "$FIRE66_BOOT_LAYOUT" = compat ] || [ "$FIRE66_BOOT_LAYOUT" = hybrid ]; then
+	touch vendor_v3_setup;
+fi;
 
 . tools/ak3-core.sh;
 
-FIRE66_BOOT_CMDLINE="bootopt=64S3,32N2,64N2 androidboot.init_fatal_reboot_target=recovery";
+FIRE66_BOOT_CMDLINE="bootopt=64S3,32N2,64N2";
 
 ak_is_mounted() {
 	mount | grep -q " $1 ";
@@ -627,6 +629,14 @@ assert_boot_dtbo_pair() {
 			[ -f dtb ] ||
 				abort "dtbo.img is present without matching boot dtb. Aborting to avoid LK overlay crash...";
 		;;
+		hybrid)
+			[ -f dtb ] ||
+				abort "dtbo.img is present without matching boot dtb. Aborting to avoid LK overlay crash...";
+			[ -f vendor_boot.img ] ||
+				abort "dtbo.img is present without matching vendor_boot.img. Aborting to avoid LK overlay crash...";
+			ak_partition_exists vendor_boot ||
+				abort "vendor_boot partition was not found. Aborting to keep dtbo/vendor_boot in sync...";
+		;;
 		vendor_boot)
 			[ -f vendor_boot.img ] ||
 				abort "dtbo.img is present without matching vendor_boot.img. Aborting to avoid LK overlay crash...";
@@ -662,6 +672,15 @@ prepare_fire66_boot_layout() {
 		;;
 		compat)
 			ui_print " " "Fire 6.6 layout: keeping DTB in boot.img compatibility path.";
+		;;
+		hybrid)
+			[ -f dtb ] ||
+				abort "hybrid layout selected but boot dtb is missing. Aborting...";
+			[ -f vendor_boot.img ] ||
+				abort "hybrid layout selected but vendor_boot.img is missing. Aborting...";
+			ak_partition_exists vendor_boot ||
+				abort "vendor_boot partition was not found. Aborting...";
+			ui_print " " "Fire 6.6 layout: keeping LK v2 DTB in boot.img and flashing vendor_boot.";
 		;;
 		*)
 			abort "Unsupported Fire 6.6 boot layout: $FIRE66_BOOT_LAYOUT";
