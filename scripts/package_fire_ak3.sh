@@ -48,6 +48,7 @@ FIRE66_BOOT_LAYOUT=${FIRE66_BOOT_LAYOUT:-hybrid}
 FIRE66_KERNEL_COMPRESSION=${FIRE66_KERNEL_COMPRESSION:-gzip}
 FIRE66_BOOT_CMDLINE=${FIRE66_BOOT_CMDLINE:-"bootopt=64S3,32N2,64N2"}
 FIRE66_VENDOR_CMDLINE=${FIRE66_VENDOR_CMDLINE:-}
+FIRE66_BOOTCONFIG_FILE=${FIRE66_BOOTCONFIG_FILE:-}
 FIRE66_BASE_BOOT_IMG=${FIRE66_BASE_BOOT_IMG:-}
 FIRE66_BOOT_OS_VERSION=${FIRE66_BOOT_OS_VERSION:-16.0.0}
 FIRE66_BOOT_OS_PATCH_LEVEL=${FIRE66_BOOT_OS_PATCH_LEVEL:-2026-06}
@@ -72,6 +73,13 @@ case "$FIRE66_BOOT_LAYOUT" in
 	compat|hybrid|vendor_boot|boot_v3_vendor_boot|boot_v4_vendor_boot) ;;
 	*) die "unsupported FIRE66_BOOT_LAYOUT: $FIRE66_BOOT_LAYOUT" ;;
 esac
+if [ -z "${FIRE66_BOOTCONFIG+x}" ]; then
+	if [ "$FIRE66_BOOT_LAYOUT" = boot_v4_vendor_boot ]; then
+		FIRE66_BOOTCONFIG="androidboot.init_fatal_reboot_target=recovery"
+	else
+		FIRE66_BOOTCONFIG=
+	fi
+fi
 case "$FIRE66_KERNEL_COMPRESSION" in
 	gzip) ;;
 	*) die "unsupported FIRE66_KERNEL_COMPRESSION: $FIRE66_KERNEL_COMPRESSION" ;;
@@ -336,9 +344,27 @@ done
 build_vendor_boot() {
 	local vendor_ramdisk=$1
 	local header_version=3
-	local vendor_boot_size
+	local vendor_boot_size vendor_bootconfig_file
+	local -a vendor_bootconfig_args=()
 
 	[ "$FIRE66_BOOT_LAYOUT" != boot_v4_vendor_boot ] || header_version=4
+	if [ "$header_version" = 4 ]; then
+		if [ -n "$FIRE66_BOOTCONFIG_FILE" ]; then
+			[ -f "$FIRE66_BOOTCONFIG_FILE" ] ||
+				die "FIRE66_BOOTCONFIG_FILE not found: $FIRE66_BOOTCONFIG_FILE"
+			vendor_bootconfig_file=$FIRE66_BOOTCONFIG_FILE
+		elif [ -n "$FIRE66_BOOTCONFIG" ]; then
+			vendor_bootconfig_file="${DT_OUT}/fire66.bootconfig"
+			printf '%s\n' "$FIRE66_BOOTCONFIG" > "$vendor_bootconfig_file"
+		else
+			vendor_bootconfig_file=
+		fi
+		if [ -n "$vendor_bootconfig_file" ]; then
+			vendor_bootconfig_args=(--vendor_bootconfig "$vendor_bootconfig_file")
+		fi
+	elif [ -n "$FIRE66_BOOTCONFIG_FILE" ] || [ -n "$FIRE66_BOOTCONFIG" ]; then
+		die "vendor bootconfig requires boot_v4_vendor_boot layout"
+	fi
 
 	echo "==> Building Fire vendor_boot"
 	"$MKBOOTIMG" \
@@ -351,6 +377,7 @@ build_vendor_boot() {
 		--dtb_offset "$VENDOR_BOOT_DTB_OFFSET" \
 		--vendor_cmdline "$FIRE66_VENDOR_CMDLINE" \
 		--vendor_ramdisk "$vendor_ramdisk" \
+		"${vendor_bootconfig_args[@]}" \
 		--dtb "${DT_OUT}/mt6768.dtb" \
 		--vendor_boot "${DT_OUT}/vendor_boot.img" \
 		> "${DT_OUT}/mkbootimg-vendor_boot.log" 2>&1
@@ -693,6 +720,8 @@ esac
 cp -f "${DT_OUT}/mt6768.dtb" "${ROM_ARTIFACTS_DIR}/dtb"
 cp -f "${DT_OUT}/dtbo.img" "${ROM_ARTIFACTS_DIR}/dtbo.img"
 cp -f "${DT_OUT}/vendor_boot.img" "${ROM_ARTIFACTS_DIR}/vendor_boot.img"
+[ ! -f "${DT_OUT}/fire66.bootconfig" ] || \
+	cp -f "${DT_OUT}/fire66.bootconfig" "${ROM_ARTIFACTS_DIR}/vendor_boot.bootconfig"
 [ ! -f "${DT_OUT}/boot.img" ] || cp -f "${DT_OUT}/boot.img" "${ROM_ARTIFACTS_DIR}/boot.img"
 cp -a "${MOD_DST}/." "${ROM_ARTIFACTS_DIR}/modules/vendor/lib/modules/"
 
@@ -755,7 +784,7 @@ fi;
 
 . tools/ak3-core.sh;
 
-FIRE66_BOOT_CMDLINE="bootopt=64S3,32N2,64N2";
+FIRE66_BOOT_CMDLINE="__FIRE66_BOOT_CMDLINE__";
 
 ak_is_mounted() {
 	mount | grep -q " $1 ";
@@ -1093,6 +1122,7 @@ cd "$AKHOME";
 write_boot;
 AK3_EOF
 	sed -i "s|__FIRE66_BOOT_LAYOUT__|${FIRE66_BOOT_LAYOUT}|g" "${STAGE}/anykernel.sh"
+	sed -i "s|__FIRE66_BOOT_CMDLINE__|${FIRE66_BOOT_CMDLINE}|g" "${STAGE}/anykernel.sh"
 	chmod 755 "${STAGE}/anykernel.sh"
 
 	echo "==> Creating AK3 zip"
