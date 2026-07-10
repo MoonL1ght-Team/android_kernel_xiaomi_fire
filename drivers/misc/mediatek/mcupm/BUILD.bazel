@@ -1,0 +1,31 @@
+load("//build/kernel/kleaf:kernel.bzl", "ddk_headers")
+
+package(
+    default_visibility = [
+        "//visibility:public",
+    ],
+)
+
+exports_files([
+    "Kconfig",
+])
+
+filegroup(
+    name = "sources",
+    srcs = glob([
+        "**",
+    ], exclude = [
+        "BUILD.bazel",
+        "v2/**",
+    ]),
+)
+
+ddk_headers(
+    name = "mcupm_public_headers",
+    hdrs = glob([
+        "include/**/*.h",
+    ]),
+    includes = [
+        "include",
+    ],
+)

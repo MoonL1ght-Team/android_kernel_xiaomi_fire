@@ -35,6 +35,8 @@ filegroup(
             "//kernel_device_modules-6.6/drivers/misc/mediatek/eccci:Kconfig",
             "//kernel_device_modules-6.6/drivers/misc/mediatek/geniezone:Kconfig",
             "//kernel_device_modules-6.6/drivers/misc/mediatek/geniezone:gz-trusty/Kconfig",
+            "//kernel_device_modules-6.6/drivers/misc/mediatek/mcupm:Kconfig",
+            "//kernel_device_modules-6.6/drivers/misc/mediatek/tinysys_scmi:Kconfig",
         ],
 )
 filegroup(
@@ -64,9 +66,15 @@ filegroup(
             "//kernel_device_modules-6.6/drivers/misc/mediatek/cmdq/mailbox:sources",
             "//kernel_device_modules-6.6/drivers/misc/mediatek/eccci:sources",
             "//kernel_device_modules-6.6/drivers/misc/mediatek/geniezone:sources",
+            "//kernel_device_modules-6.6/drivers/iommu/arm/arm-smmu-v3:sources",
+            "//kernel_device_modules-6.6/drivers/misc/mediatek/mbraink/bridge:sources",
+            "//kernel_device_modules-6.6/drivers/misc/mediatek/mcupm:sources",
+            "//kernel_device_modules-6.6/drivers/misc/mediatek/mcupm/v2:sources",
             "//kernel_device_modules-6.6/drivers/misc/mediatek/mme/src:sources",
             "//kernel_device_modules-6.6/drivers/misc/mediatek/mmp/src:sources",
             "//kernel_device_modules-6.6/drivers/misc/mediatek/mtk-interconnect:sources",
+            "//kernel_device_modules-6.6/drivers/misc/mediatek/sspm/v3:sources",
+            "//kernel_device_modules-6.6/drivers/misc/mediatek/tinysys_scmi:sources",
         ],
 )
 

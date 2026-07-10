@@ -1,0 +1,31 @@
+load("//build/bazel_mgk_rules:mgk_ko.bzl", "define_mgk_ko")
+load("//build/kernel/kleaf:kernel.bzl", "ddk_headers")
+
+package(
+    default_visibility = [
+        "//visibility:public",
+    ],
+)
+
+filegroup(
+    name = "sources",
+    srcs = glob([
+        "**",
+    ], exclude = [
+        "BUILD.bazel",
+    ]),
+)
+
+ddk_headers(
+    name = "mtk_mbraink_bridge_headers",
+    hdrs = glob([
+        "**/*.h",
+    ]),
+    includes = [
+        ".",
+    ],
+)
+
+define_mgk_ko(
+    name = "mtk_mbraink_bridge",
+)

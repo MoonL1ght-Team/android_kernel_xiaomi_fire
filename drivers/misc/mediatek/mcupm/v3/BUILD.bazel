@@ -1,0 +1,17 @@
+load("//build/bazel_mgk_rules:mgk.bzl", "kernel_versions_and_projects")
+
+package(
+    default_visibility = [
+        "//visibility:public",
+    ],
+)
+
+[
+    alias(
+        name = "mcupm.{}.{}.{}".format(project, version, build),
+        actual = "//kernel_device_modules-{}/drivers/misc/mediatek/mcupm/v2:mcupm.{}.{}.{}".format(version, project, version, build),
+    )
+    for version, projects in kernel_versions_and_projects.items()
+    for project in projects.split(" ")
+    for build in ["eng", "userdebug", "user", "ack", "no_device_ko"]
+]

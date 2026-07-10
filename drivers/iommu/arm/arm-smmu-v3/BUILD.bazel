@@ -1,0 +1,37 @@
+load("//build/bazel_mgk_rules:mgk_ko.bzl", "define_mgk_ko")
+load("//build/kernel/kleaf:kernel.bzl", "ddk_headers")
+
+package(
+    default_visibility = [
+        "//visibility:public",
+    ],
+)
+
+filegroup(
+    name = "sources",
+    srcs = glob([
+        "**",
+    ], exclude = [
+        "BUILD.bazel",
+    ]),
+)
+
+ddk_headers(
+    name = "smmu_public_headers",
+    hdrs = glob([
+        "**/*.h",
+    ]),
+    includes = [
+        ".",
+    ],
+)
+
+define_mgk_ko(
+    name = "arm_smmu_v3",
+    outs = [
+        "arm_smmu_v3.ko",
+        "mtk-smmuv3-lmu.ko",
+        "mtk-smmuv3-mpam-mon.ko",
+        "mtk-smmuv3-pmu.ko",
+    ],
+)
