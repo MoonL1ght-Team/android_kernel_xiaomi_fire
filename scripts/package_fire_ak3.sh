@@ -593,6 +593,11 @@ add_fire_boot_avb_footer() {
 		props+=("--prop" "com.android.build.boot.fingerprint:${FIRE66_BOOT_AVB_FINGERPRINT}")
 	fi
 
+	if [ "$FIRE66_BOOT_AVB_RELOCATE_TO_BASE" = 1 ] &&
+		[ -n "$FIRE66_BOOT_AVB_GEOMETRY_IMG" ]; then
+		pad_fire_boot_payload_to_base_geometry "$image" "$FIRE66_BOOT_AVB_GEOMETRY_IMG"
+	fi
+
 	echo "==> Adding Fire boot AVB hash footer"
 	"$AVBTOOL" add_hash_footer \
 		--image "$image" \
@@ -609,6 +614,57 @@ add_fire_boot_avb_footer() {
 		[ -n "$FIRE66_BOOT_AVB_GEOMETRY_IMG" ]; then
 		relocate_fire_boot_avb_footer "$image" "$FIRE66_BOOT_AVB_GEOMETRY_IMG"
 	fi
+}
+
+pad_fire_boot_payload_to_base_geometry() {
+	local image=$1
+	local base_image=$2
+
+	need_tool python3
+	[ -f "$base_image" ] || die "Fire boot AVB geometry image not found: $base_image"
+
+	echo "==> Padding Fire boot payload to base AVB original size"
+	python3 - "$image" "$base_image" <<'PY'
+import pathlib
+import struct
+import sys
+
+image = pathlib.Path(sys.argv[1])
+base = pathlib.Path(sys.argv[2])
+
+footer_struct = ">4sIIQQQ28s"
+footer_size = struct.calcsize(footer_struct)
+
+def read_footer(data, label):
+    if len(data) < footer_size:
+        raise SystemExit(f"{label} is too small for an AVB footer")
+    footer = data[-footer_size:]
+    magic, _major, _minor, orig, off, size, _reserved = struct.unpack(
+        footer_struct, footer
+    )
+    if magic != b"AVBf":
+        raise SystemExit(f"{label} has no AVB footer")
+    if off + size > len(data) - footer_size:
+        raise SystemExit(f"{label} has an out-of-range VBMeta area")
+    return orig
+
+payload = image.read_bytes()
+base_data = base.read_bytes()
+base_orig = read_footer(base_data, str(base))
+
+if len(payload) > base_orig:
+    raise SystemExit(
+        f"generated boot payload {len(payload)} does not fit base AVB area {base_orig}; "
+        "use a newer accepted Fire Android 16/crDroid boot image as FIRE66_BASE_BOOT_IMG"
+    )
+if payload[:8] != b"ANDROID!":
+    raise SystemExit(f"{image}: missing ANDROID! boot magic")
+
+if len(payload) < base_orig:
+    image.write_bytes(payload + b"\0" * (base_orig - len(payload)))
+
+print(f"padded boot payload: {len(payload)} -> {base_orig}")
+PY
 }
 
 relocate_fire_boot_avb_footer() {
@@ -698,6 +754,8 @@ PY
 
 validate_fire_boot_partition_image() {
 	local image=$1
+	local avb_info="${DT_OUT}/avbtool-boot-info.log"
+	local avb_original avb_hash_size
 
 	need_tool python3
 	python3 - "$image" "$FIRE66_BOOT_PARTITION_BYTES" <<'PY'
@@ -735,6 +793,26 @@ print(
     f"original={orig} vbmeta_offset={off} vbmeta_size={size}"
 )
 PY
+
+	"$AVBTOOL" info_image --image "$image" > "$avb_info" 2>&1
+	avb_original=$(awk -F: '
+		/Original image size:/ {
+			gsub(/[^0-9]/, "", $2)
+			print $2
+			exit
+		}
+	' "$avb_info")
+	avb_hash_size=$(awk -F: '
+		/Image Size:/ {
+			gsub(/[^0-9]/, "", $2)
+			print $2
+			exit
+		}
+	' "$avb_info")
+	[ -n "$avb_original" ] || die "cannot parse boot AVB original image size from $avb_info"
+	[ -n "$avb_hash_size" ] || die "cannot parse boot AVB hash image size from $avb_info"
+	[ "$avb_original" = "$avb_hash_size" ] ||
+		die "boot AVB geometry mismatch: footer original=${avb_original}, hash descriptor image_size=${avb_hash_size}"
 }
 
 build_fire_partition_hash_vbmeta() {
