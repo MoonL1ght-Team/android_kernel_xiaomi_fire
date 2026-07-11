@@ -65,6 +65,7 @@ FIRE66_BOOT_AVB_SECURITY_PATCH_PROP=${FIRE66_BOOT_AVB_SECURITY_PATCH_PROP:-}
 FIRE66_BOOT_AVB_GEOMETRY_IMG=${FIRE66_BOOT_AVB_GEOMETRY_IMG:-}
 FIRE66_BOOT_AVB_RELOCATE_TO_BASE=${FIRE66_BOOT_AVB_RELOCATE_TO_BASE:-1}
 FIRE66_ALLOW_RAW_BOOT=${FIRE66_ALLOW_RAW_BOOT:-0}
+FIRE66_KERNEL_TEXT_OFFSET=${FIRE66_KERNEL_TEXT_OFFSET:-}
 FIRE66_VBMETA_KEY=${FIRE66_VBMETA_KEY:-${FIRE66_BOOT_AVB_KEY}}
 FIRE66_VBMETA_ALGORITHM=${FIRE66_VBMETA_ALGORITHM:-${FIRE66_BOOT_AVB_ALGORITHM}}
 FIRE66_VBMETA_ROLLBACK_INDEX=${FIRE66_VBMETA_ROLLBACK_INDEX:-0}
@@ -289,6 +290,97 @@ if [ "$PROJECT" = mgk_64_k66 ]; then
 		die "Fire requires CONFIG_MMC_BLOCK_MINORS=32 for high GPT partition minors: $FINAL_CONFIG"
 fi
 
+patch_fire_kernel_text_offset() {
+	local image_gz=$1
+	local offset=$2
+	local patched_raw="${DT_OUT}/Image.text-offset"
+	local patched_gz="${DT_OUT}/Image.text-offset.gz"
+
+	need_tool python3
+
+	echo "==> Patching Fire ARM64 Image text_offset to ${offset}"
+	gzip -dc "$image_gz" > "$patched_raw" ||
+		die "failed to decompress kernel for text_offset patch: $image_gz"
+
+	python3 - "$patched_raw" "$offset" <<'PY'
+import pathlib
+import struct
+import sys
+
+path = pathlib.Path(sys.argv[1])
+try:
+    wanted = int(sys.argv[2], 0)
+except ValueError as exc:
+    raise SystemExit(f"invalid FIRE66_KERNEL_TEXT_OFFSET: {sys.argv[2]}") from exc
+
+if wanted < 0 or wanted > 0xffffffffffffffff:
+    raise SystemExit(f"FIRE66_KERNEL_TEXT_OFFSET is outside u64 range: {wanted}")
+
+data = bytearray(path.read_bytes())
+if len(data) < 0x40:
+    raise SystemExit("ARM64 Image is too small")
+if data[0x38:0x3c] != b"ARMd":
+    raise SystemExit(
+        "decompressed kernel is not an ARM64 Image: "
+        f"magic={data[0x38:0x3c]!r}"
+    )
+
+old = struct.unpack_from("<Q", data, 0x08)[0]
+struct.pack_into("<Q", data, 0x08, wanted)
+path.write_bytes(data)
+
+print(f"ARM64 Image text_offset: 0x{old:x} -> 0x{wanted:x}")
+PY
+
+	gzip -n -9 < "$patched_raw" > "$patched_gz" ||
+		die "failed to recompress text_offset-patched kernel"
+	gzip -t "$patched_gz" ||
+		die "patched kernel gzip validation failed: $patched_gz"
+
+	BOOT_IMAGE_GZ=$patched_gz
+	BOOT_IMAGE_STAGE=$patched_gz
+}
+
+validate_fire_kernel_header() {
+	local image_gz=$1
+	local expected_text_offset=${2:-}
+	local raw="${DT_OUT}/Image.header-check"
+
+	need_tool python3
+
+	gzip -dc "$image_gz" > "$raw" ||
+		die "failed to decompress final boot kernel: $image_gz"
+
+	python3 - "$raw" "$expected_text_offset" <<'PY'
+import pathlib
+import struct
+import sys
+
+data = pathlib.Path(sys.argv[1]).read_bytes()
+expected = sys.argv[2]
+
+if len(data) < 0x40:
+    raise SystemExit("final ARM64 Image is too small")
+if data[0x38:0x3c] != b"ARMd":
+    raise SystemExit(f"final kernel has invalid ARM64 magic: {data[0x38:0x3c]!r}")
+
+text_offset = struct.unpack_from("<Q", data, 0x08)[0]
+image_size = struct.unpack_from("<Q", data, 0x10)[0]
+flags = struct.unpack_from("<Q", data, 0x18)[0]
+
+if expected:
+    wanted = int(expected, 0)
+    if text_offset != wanted:
+        raise SystemExit(
+            f"final ARM64 text_offset is 0x{text_offset:x}, expected 0x{wanted:x}"
+        )
+
+print(f"Final ARM64 text_offset: 0x{text_offset:x}")
+print(f"Final ARM64 image_size:  0x{image_size:x}")
+print(f"Final ARM64 flags:       0x{flags:x}")
+PY
+}
+
 STAMP=${STAMP:-$(date +%Y%m%d-%H%M%S)}
 WORK_DIR="${STAGE_BASE}/${STAMP}"
 STAGE="${WORK_DIR}/AnyKernel3"
@@ -341,6 +433,11 @@ case "$FIRE66_KERNEL_COMPRESSION" in
 		BOOT_IMAGE_NAME=Image.lz4
 	;;
 esac
+
+if [ -n "$FIRE66_KERNEL_TEXT_OFFSET" ]; then
+	patch_fire_kernel_text_offset "$BOOT_IMAGE_STAGE" "$FIRE66_KERNEL_TEXT_OFFSET"
+fi
+validate_fire_kernel_header "$BOOT_IMAGE_STAGE" "$FIRE66_KERNEL_TEXT_OFFSET"
 
 echo "==> Building Fire dtb/dtbo"
 dt_include_args=(
