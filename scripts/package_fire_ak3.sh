@@ -65,8 +65,22 @@ FIRE66_BOOT_AVB_SECURITY_PATCH_PROP=${FIRE66_BOOT_AVB_SECURITY_PATCH_PROP:-}
 FIRE66_BOOT_AVB_GEOMETRY_IMG=${FIRE66_BOOT_AVB_GEOMETRY_IMG:-}
 FIRE66_BOOT_AVB_RELOCATE_TO_BASE=${FIRE66_BOOT_AVB_RELOCATE_TO_BASE:-1}
 FIRE66_ALLOW_RAW_BOOT=${FIRE66_ALLOW_RAW_BOOT:-0}
+FIRE66_VBMETA_KEY=${FIRE66_VBMETA_KEY:-${FIRE66_BOOT_AVB_KEY}}
+FIRE66_VBMETA_ALGORITHM=${FIRE66_VBMETA_ALGORITHM:-${FIRE66_BOOT_AVB_ALGORITHM}}
+FIRE66_VBMETA_ROLLBACK_INDEX=${FIRE66_VBMETA_ROLLBACK_INDEX:-0}
+FIRE66_VBMETA_ROLLBACK_INDEX_LOCATION=${FIRE66_VBMETA_ROLLBACK_INDEX_LOCATION:-0}
+FIRE66_VBMETA_FLAGS=${FIRE66_VBMETA_FLAGS:-1}
+FIRE66_VBMETA_PADDING_SIZE=${FIRE66_VBMETA_PADDING_SIZE:-4096}
+FIRE66_VBMETA_BOOT_ROLLBACK_INDEX_LOCATION=${FIRE66_VBMETA_BOOT_ROLLBACK_INDEX_LOCATION:-1}
+FIRE66_VBMETA_SYSTEM_ROLLBACK_INDEX_LOCATION=${FIRE66_VBMETA_SYSTEM_ROLLBACK_INDEX_LOCATION:-2}
+FIRE66_VBMETA_VENDOR_ROLLBACK_INDEX_LOCATION=${FIRE66_VBMETA_VENDOR_ROLLBACK_INDEX_LOCATION:-3}
+FIRE66_VBMETA_SYSTEM_KEY=${FIRE66_VBMETA_SYSTEM_KEY:-${FIRE66_VBMETA_KEY}}
+FIRE66_VBMETA_VENDOR_KEY=${FIRE66_VBMETA_VENDOR_KEY:-${FIRE66_VBMETA_KEY}}
+FIRE66_VBMETA_DTBO_FINGERPRINT=${FIRE66_VBMETA_DTBO_FINGERPRINT:-${FIRE66_BOOT_AVB_FINGERPRINT}}
+FIRE66_DTBO_PARTITION_BYTES=${FIRE66_DTBO_PARTITION_BYTES:-8388608}
 AK3_FLASH_DTBO=${AK3_FLASH_DTBO:-1}
 AK3_FLASH_VENDOR_BOOT=${AK3_FLASH_VENDOR_BOOT:-}
+AK3_FLASH_VBMETA=${AK3_FLASH_VBMETA:-}
 LEGACY_DTBO_COMPAT=${LEGACY_DTBO_COMPAT:-${AK3_TEMPLATE}/dtbo.img}
 DTBO_ENTRY_COUNT=${DTBO_ENTRY_COUNT:-1}
 LK_DTB_COMPAT=${LK_DTB_COMPAT:-}
@@ -160,6 +174,14 @@ if [ -z "$AK3_FLASH_VENDOR_BOOT" ]; then
 		AK3_FLASH_VENDOR_BOOT=0
 	fi
 fi
+if [ -z "$AK3_FLASH_VBMETA" ]; then
+	if [ "$FIRE66_BOOT_LAYOUT" = boot_v3_vendor_boot ] ||
+		[ "$FIRE66_BOOT_LAYOUT" = boot_v4_vendor_boot ]; then
+		AK3_FLASH_VBMETA=1
+	else
+		AK3_FLASH_VBMETA=0
+	fi
+fi
 
 if [ "$SKIP_AK3" != 1 ]; then
 	need_tool rsync
@@ -174,11 +196,16 @@ need_tool cpio
 [ -n "$DTC" ] || die "dtc is required"
 [ -n "$MKBOOTIMG" ] || die "mkbootimg is required"
 [ "$FIRE66_BOOT_AVB_FOOTER" != 1 ] || [ -n "$AVBTOOL" ] || die "avbtool is required for Fire boot AVB footer"
+[ "$AK3_FLASH_VBMETA" != 1 ] || [ -n "$AVBTOOL" ] || die "avbtool is required for Fire vbmeta image"
 [ "$STRIP_DEBUG_MODULES" != 1 ] || [ -n "$STRIP" ] || die "llvm-strip is required"
 [ -x "$MKDTIMG" ] || die "mkdtimg not found: $MKDTIMG"
 [ -x "$MKBOOTIMG" ] || die "mkbootimg not executable: $MKBOOTIMG"
 [ "$FIRE66_BOOT_AVB_FOOTER" != 1 ] || [ -x "$AVBTOOL" ] || die "avbtool not executable: $AVBTOOL"
+[ "$AK3_FLASH_VBMETA" != 1 ] || [ -x "$AVBTOOL" ] || die "avbtool not executable: $AVBTOOL"
 [ "$FIRE66_BOOT_AVB_FOOTER" != 1 ] || [ -f "$FIRE66_BOOT_AVB_KEY" ] || die "Fire boot AVB key not found: $FIRE66_BOOT_AVB_KEY"
+[ "$AK3_FLASH_VBMETA" != 1 ] || [ -f "$FIRE66_VBMETA_KEY" ] || die "Fire vbmeta key not found: $FIRE66_VBMETA_KEY"
+[ "$AK3_FLASH_VBMETA" != 1 ] || [ -f "$FIRE66_VBMETA_SYSTEM_KEY" ] || die "Fire vbmeta_system key not found: $FIRE66_VBMETA_SYSTEM_KEY"
+[ "$AK3_FLASH_VBMETA" != 1 ] || [ -f "$FIRE66_VBMETA_VENDOR_KEY" ] || die "Fire vbmeta_vendor key not found: $FIRE66_VBMETA_VENDOR_KEY"
 [ "$FIRE66_BOOT_LAYOUT" != boot_v3_vendor_boot ] || [ -x "$UNPACK_BOOTIMG" ] || \
 	die "unpack_bootimg not executable: $UNPACK_BOOTIMG"
 [ "$FIRE66_BOOT_LAYOUT" != boot_v4_vendor_boot ] || [ -x "$UNPACK_BOOTIMG" ] || \
@@ -710,6 +737,81 @@ print(
 PY
 }
 
+build_fire_partition_hash_vbmeta() {
+	local image=$1
+	local partition_name=$2
+	local partition_size=$3
+	local out=$4
+	local hash_src="${DT_OUT}/${partition_name}.hashsrc.img"
+
+	cp -f "$image" "$hash_src"
+	"$AVBTOOL" add_hash_footer \
+		--image "$hash_src" \
+		--partition_size "$partition_size" \
+		--partition_name "$partition_name" \
+		--algorithm "$FIRE66_VBMETA_ALGORITHM" \
+		--key "$FIRE66_VBMETA_KEY" \
+		--rollback_index 1 \
+		--rollback_index_location 0 \
+		--output_vbmeta_image "$out" \
+		--do_not_append_vbmeta_image \
+		> "${DT_OUT}/avbtool-${partition_name}.log" 2>&1
+}
+
+build_fire_vbmeta() {
+	local -a props=()
+	local dtbo_desc="${DT_OUT}/dtbo.desc.vbmeta"
+	local vendor_boot_desc="${DT_OUT}/vendor_boot.desc.vbmeta"
+	local boot_pubkey="${DT_OUT}/boot.avbpubkey"
+	local system_pubkey="${DT_OUT}/vbmeta_system.avbpubkey"
+	local vendor_pubkey="${DT_OUT}/vbmeta_vendor.avbpubkey"
+
+	[ "$AK3_FLASH_VBMETA" = 1 ] || return 0
+
+	if [ -n "$FIRE66_VBMETA_DTBO_FINGERPRINT" ]; then
+		props+=("--prop" "com.android.build.dtbo.fingerprint:${FIRE66_VBMETA_DTBO_FINGERPRINT}")
+	fi
+
+	echo "==> Building Fire top-level vbmeta"
+	"$AVBTOOL" extract_public_key --key "$FIRE66_BOOT_AVB_KEY" --output "$boot_pubkey"
+	"$AVBTOOL" extract_public_key --key "$FIRE66_VBMETA_SYSTEM_KEY" --output "$system_pubkey"
+	"$AVBTOOL" extract_public_key --key "$FIRE66_VBMETA_VENDOR_KEY" --output "$vendor_pubkey"
+
+	build_fire_partition_hash_vbmeta \
+		"${DT_OUT}/dtbo.img" \
+		dtbo \
+		"$FIRE66_DTBO_PARTITION_BYTES" \
+		"$dtbo_desc"
+	build_fire_partition_hash_vbmeta \
+		"${DT_OUT}/vendor_boot.img" \
+		vendor_boot \
+		"$VENDOR_BOOT_MAX_BYTES" \
+		"$vendor_boot_desc"
+
+	"$AVBTOOL" make_vbmeta_image \
+		--output "${DT_OUT}/vbmeta.img" \
+		--padding_size "$FIRE66_VBMETA_PADDING_SIZE" \
+		--algorithm "$FIRE66_VBMETA_ALGORITHM" \
+		--key "$FIRE66_VBMETA_KEY" \
+		--rollback_index "$FIRE66_VBMETA_ROLLBACK_INDEX" \
+		--rollback_index_location "$FIRE66_VBMETA_ROLLBACK_INDEX_LOCATION" \
+		--flags "$FIRE66_VBMETA_FLAGS" \
+		--chain_partition "boot:${FIRE66_VBMETA_BOOT_ROLLBACK_INDEX_LOCATION}:${boot_pubkey}" \
+		--chain_partition "vbmeta_system:${FIRE66_VBMETA_SYSTEM_ROLLBACK_INDEX_LOCATION}:${system_pubkey}" \
+		--chain_partition "vbmeta_vendor:${FIRE66_VBMETA_VENDOR_ROLLBACK_INDEX_LOCATION}:${vendor_pubkey}" \
+		"${props[@]}" \
+		--include_descriptors_from_image "$dtbo_desc" \
+		--include_descriptors_from_image "$vendor_boot_desc" \
+		> "${DT_OUT}/avbtool-vbmeta.log" 2>&1
+
+	"$AVBTOOL" info_image --image "${DT_OUT}/vbmeta.img" \
+		> "${DT_OUT}/avbtool-vbmeta-info.log" 2>&1
+	grep -q 'Partition Name:.*vendor_boot' "${DT_OUT}/avbtool-vbmeta-info.log" ||
+		die "generated vbmeta.img does not describe vendor_boot"
+	grep -q 'Partition Name:.*dtbo' "${DT_OUT}/avbtool-vbmeta-info.log" ||
+		die "generated vbmeta.img does not describe dtbo"
+}
+
 build_fire_boot_v3_v4() {
 	local vendor_ramdisk=$1
 	local base_boot_dir="${WORK_DIR}/base_boot"
@@ -758,7 +860,8 @@ if [ "$SKIP_AK3" != 1 ]; then
 		-name 'dtb' -o \
 		-name 'dtb.img' -o \
 		-name 'dtbo.img' -o \
-		-name 'vendor_boot.img' \
+		-name 'vendor_boot.img' -o \
+		-name 'vbmeta.img' \
 		\) -delete
 fi
 rm -rf "${STAGE}/modules"
@@ -1022,10 +1125,14 @@ build_vendor_boot "${DT_OUT}/vendor-ramdisk.cpio.gz"
 case "$FIRE66_BOOT_LAYOUT" in
 	boot_v3_vendor_boot|boot_v4_vendor_boot)
 		build_fire_boot_v3_v4 "${DT_OUT}/vendor-ramdisk.cpio.gz"
+		build_fire_vbmeta
 	;;
 esac
 if [ "$SKIP_AK3" != 1 ] && [ "$AK3_FLASH_VENDOR_BOOT" = 1 ]; then
 	cp -f "${DT_OUT}/vendor_boot.img" "${STAGE}/vendor_boot.img"
+fi
+if [ "$SKIP_AK3" != 1 ] && [ "$AK3_FLASH_VBMETA" = 1 ]; then
+	cp -f "${DT_OUT}/vbmeta.img" "${STAGE}/vbmeta.img"
 fi
 if [ "$SKIP_AK3" != 1 ]; then
 	case "$FIRE66_BOOT_LAYOUT" in
@@ -1051,6 +1158,7 @@ esac
 cp -f "${DT_OUT}/mt6768.dtb" "${ROM_ARTIFACTS_DIR}/dtb"
 cp -f "${DT_OUT}/dtbo.img" "${ROM_ARTIFACTS_DIR}/dtbo.img"
 cp -f "${DT_OUT}/vendor_boot.img" "${ROM_ARTIFACTS_DIR}/vendor_boot.img"
+[ ! -f "${DT_OUT}/vbmeta.img" ] || cp -f "${DT_OUT}/vbmeta.img" "${ROM_ARTIFACTS_DIR}/vbmeta.img"
 [ ! -f "${DT_OUT}/fire66.bootconfig" ] || \
 	cp -f "${DT_OUT}/fire66.bootconfig" "${ROM_ARTIFACTS_DIR}/vendor_boot.bootconfig"
 [ ! -f "${DT_OUT}/boot.img" ] || cp -f "${DT_OUT}/boot.img" "${ROM_ARTIFACTS_DIR}/boot.img"
@@ -1184,10 +1292,13 @@ boot_v3_vendor_boot|boot_v4_vendor_boot)
 		abort "$FIRE66_BOOT_LAYOUT layout selected but vendor_boot.img is missing. Aborting...";
 	[ -f dtbo.img ] ||
 		abort "$FIRE66_BOOT_LAYOUT layout selected but dtbo.img is missing. Aborting...";
-	ui_print " " "Fire 6.6 layout: flashing matched boot/vendor_boot/dtbo images.";
+	[ -f vbmeta.img ] ||
+		abort "$FIRE66_BOOT_LAYOUT layout selected but vbmeta.img is missing. Aborting...";
+	ui_print " " "Fire 6.6 layout: flashing matched boot/vendor_boot/dtbo/vbmeta images.";
 	flash_generic boot;
 	flash_generic vendor_boot;
 	flash_generic dtbo;
+	flash_generic vbmeta;
 	exit 0;
 ;;
 esac;
