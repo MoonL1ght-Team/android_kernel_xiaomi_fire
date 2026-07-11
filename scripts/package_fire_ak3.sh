@@ -39,6 +39,7 @@ ROM_ARTIFACTS_DIR=${ROM_ARTIFACTS_DIR:-${REPO_ROOT}/dist/rom/${PROJECT}.${MODE}}
 STAGE_BASE=${STAGE_BASE:-${OUT_DIR}/fire-ak3-stage}
 MKDTIMG=${MKDTIMG:-${KERNEL_ROOT}/prebuilts/kernel-build-tools/linux-x86/bin/mkdtimg}
 MKBOOTIMG=${MKBOOTIMG:-$(command -v mkbootimg || true)}
+AVBTOOL=${AVBTOOL:-$(command -v avbtool || true)}
 UNPACK_BOOTIMG=${UNPACK_BOOTIMG:-${KERNEL_ROOT}/system/tools/mkbootimg/unpack_bootimg.py}
 CPP=${CPP:-$(command -v cpp || true)}
 DTC=${DTC:-$(command -v dtc || true)}
@@ -53,6 +54,16 @@ FIRE66_BASE_BOOT_IMG=${FIRE66_BASE_BOOT_IMG:-}
 FIRE66_BOOT_OS_VERSION=${FIRE66_BOOT_OS_VERSION:-16.0.0}
 FIRE66_BOOT_OS_PATCH_LEVEL=${FIRE66_BOOT_OS_PATCH_LEVEL:-2026-06}
 FIRE66_BOOT_MAX_BYTES=${FIRE66_BOOT_MAX_BYTES:-134217728}
+FIRE66_BOOT_PARTITION_BYTES=${FIRE66_BOOT_PARTITION_BYTES:-${FIRE66_BOOT_MAX_BYTES}}
+FIRE66_BOOT_AVB_KEY=${FIRE66_BOOT_AVB_KEY:-${KERNEL_ROOT}/prebuilts/kernel-build-tools/linux-x86/share/avb/testkey_rsa2048.pem}
+FIRE66_BOOT_AVB_ALGORITHM=${FIRE66_BOOT_AVB_ALGORITHM:-SHA256_RSA2048}
+FIRE66_BOOT_AVB_ROLLBACK_INDEX=${FIRE66_BOOT_AVB_ROLLBACK_INDEX:-1}
+FIRE66_BOOT_AVB_ROLLBACK_INDEX_LOCATION=${FIRE66_BOOT_AVB_ROLLBACK_INDEX_LOCATION:-0}
+FIRE66_BOOT_AVB_FINGERPRINT=${FIRE66_BOOT_AVB_FINGERPRINT:-Redmi/lineage_fire/fire:16/BP4A.251205.006/eng.androi:userdebug/release-keys}
+FIRE66_BOOT_AVB_OS_VERSION_PROP=${FIRE66_BOOT_AVB_OS_VERSION_PROP:-16}
+FIRE66_BOOT_AVB_SECURITY_PATCH_PROP=${FIRE66_BOOT_AVB_SECURITY_PATCH_PROP:-}
+FIRE66_BOOT_AVB_GEOMETRY_IMG=${FIRE66_BOOT_AVB_GEOMETRY_IMG:-}
+FIRE66_BOOT_AVB_RELOCATE_TO_BASE=${FIRE66_BOOT_AVB_RELOCATE_TO_BASE:-1}
 AK3_FLASH_DTBO=${AK3_FLASH_DTBO:-1}
 AK3_FLASH_VENDOR_BOOT=${AK3_FLASH_VENDOR_BOOT:-}
 LEGACY_DTBO_COMPAT=${LEGACY_DTBO_COMPAT:-${AK3_TEMPLATE}/dtbo.img}
@@ -103,6 +114,16 @@ if [ -z "${FIRE66_BOOTCONFIG_IN_BOOT_RAMDISK+x}" ]; then
 	;;
 	esac
 fi
+if [ -z "${FIRE66_BOOT_AVB_FOOTER+x}" ]; then
+	case "$FIRE66_BOOT_LAYOUT" in
+	boot_v3_vendor_boot|boot_v4_vendor_boot)
+		FIRE66_BOOT_AVB_FOOTER=1
+	;;
+	*)
+		FIRE66_BOOT_AVB_FOOTER=0
+	;;
+	esac
+fi
 if [ -z "${FIRE66_VENDOR_BOOTCONFIG_STATIC+x}" ]; then
 	case "$FIRE66_BOOT_LAYOUT" in
 	boot_v4_vendor_boot)
@@ -145,9 +166,12 @@ need_tool cpio
 [ -n "$CPP" ] || die "cpp is required"
 [ -n "$DTC" ] || die "dtc is required"
 [ -n "$MKBOOTIMG" ] || die "mkbootimg is required"
+[ "$FIRE66_BOOT_AVB_FOOTER" != 1 ] || [ -n "$AVBTOOL" ] || die "avbtool is required for Fire boot AVB footer"
 [ "$STRIP_DEBUG_MODULES" != 1 ] || [ -n "$STRIP" ] || die "llvm-strip is required"
 [ -x "$MKDTIMG" ] || die "mkdtimg not found: $MKDTIMG"
 [ -x "$MKBOOTIMG" ] || die "mkbootimg not executable: $MKBOOTIMG"
+[ "$FIRE66_BOOT_AVB_FOOTER" != 1 ] || [ -x "$AVBTOOL" ] || die "avbtool not executable: $AVBTOOL"
+[ "$FIRE66_BOOT_AVB_FOOTER" != 1 ] || [ -f "$FIRE66_BOOT_AVB_KEY" ] || die "Fire boot AVB key not found: $FIRE66_BOOT_AVB_KEY"
 [ "$FIRE66_BOOT_LAYOUT" != boot_v3_vendor_boot ] || [ -x "$UNPACK_BOOTIMG" ] || \
 	die "unpack_bootimg not executable: $UNPACK_BOOTIMG"
 [ "$FIRE66_BOOT_LAYOUT" != boot_v4_vendor_boot ] || [ -x "$UNPACK_BOOTIMG" ] || \
@@ -158,6 +182,10 @@ case "$FIRE66_BOOT_LAYOUT" in
 			die "FIRE66_BASE_BOOT_IMG is required for $FIRE66_BOOT_LAYOUT layout"
 	;;
 esac
+if [ -z "$FIRE66_BOOT_AVB_GEOMETRY_IMG" ] &&
+	[ "$FIRE66_BOOT_AVB_RELOCATE_TO_BASE" = 1 ]; then
+	FIRE66_BOOT_AVB_GEOMETRY_IMG=$FIRE66_BASE_BOOT_IMG
+fi
 [ "$STRIP_DEBUG_MODULES" != 1 ] || [ -x "$STRIP" ] || die "llvm-strip not executable: $STRIP"
 [ -d "$KERNEL_SRC" ] || die "kernel source not found: $KERNEL_SRC"
 [ -d "$DEVICE_MODULES_SRC" ] || die "device module source not found: $DEVICE_MODULES_SRC"
@@ -505,6 +533,121 @@ build_boot_ramdisk() {
 	fi
 }
 
+add_fire_boot_avb_footer() {
+	local image=$1
+	local -a props=()
+
+	if [ -n "$FIRE66_BOOT_AVB_OS_VERSION_PROP" ]; then
+		props+=("--prop" "com.android.build.boot.os_version:${FIRE66_BOOT_AVB_OS_VERSION_PROP}")
+	fi
+	if [ -n "$FIRE66_BOOT_AVB_SECURITY_PATCH_PROP" ]; then
+		props+=("--prop" "com.android.build.boot.security_patch:${FIRE66_BOOT_AVB_SECURITY_PATCH_PROP}")
+	fi
+	if [ -n "$FIRE66_BOOT_AVB_FINGERPRINT" ]; then
+		props+=("--prop" "com.android.build.boot.fingerprint:${FIRE66_BOOT_AVB_FINGERPRINT}")
+	fi
+
+	echo "==> Adding Fire boot AVB hash footer"
+	"$AVBTOOL" add_hash_footer \
+		--image "$image" \
+		--partition_size "$FIRE66_BOOT_PARTITION_BYTES" \
+		--partition_name boot \
+		--algorithm "$FIRE66_BOOT_AVB_ALGORITHM" \
+		--key "$FIRE66_BOOT_AVB_KEY" \
+		--rollback_index "$FIRE66_BOOT_AVB_ROLLBACK_INDEX" \
+		--rollback_index_location "$FIRE66_BOOT_AVB_ROLLBACK_INDEX_LOCATION" \
+		"${props[@]}" \
+		> "${DT_OUT}/avbtool-boot.log" 2>&1
+
+	if [ "$FIRE66_BOOT_AVB_RELOCATE_TO_BASE" = 1 ] &&
+		[ -n "$FIRE66_BOOT_AVB_GEOMETRY_IMG" ]; then
+		relocate_fire_boot_avb_footer "$image" "$FIRE66_BOOT_AVB_GEOMETRY_IMG"
+	fi
+}
+
+relocate_fire_boot_avb_footer() {
+	local image=$1
+	local base_image=$2
+
+	need_tool python3
+	[ -f "$base_image" ] || die "Fire boot AVB geometry image not found: $base_image"
+
+	echo "==> Relocating Fire boot AVB footer to base boot geometry"
+	python3 - "$image" "$base_image" <<'PY'
+import pathlib
+import struct
+import sys
+
+image = pathlib.Path(sys.argv[1])
+base = pathlib.Path(sys.argv[2])
+
+footer_struct = ">4sIIQQQ28s"
+footer_size = struct.calcsize(footer_struct)
+
+def read_footer(data, label):
+    if len(data) < footer_size:
+        raise SystemExit(f"{label} is too small for an AVB footer")
+    footer = data[-footer_size:]
+    magic, major, minor, orig, off, size, reserved = struct.unpack(footer_struct, footer)
+    if magic != b"AVBf":
+        raise SystemExit(f"{label} has no AVB footer")
+    if off + size > len(data) - footer_size:
+        raise SystemExit(f"{label} has an out-of-range VBMeta area")
+    return {
+        "magic": magic,
+        "major": major,
+        "minor": minor,
+        "orig": orig,
+        "off": off,
+        "size": size,
+        "reserved": reserved,
+        "footer": bytearray(footer),
+    }
+
+data = image.read_bytes()
+base_data = base.read_bytes()
+cur = read_footer(data, str(image))
+ref = read_footer(base_data, str(base))
+
+if len(data) != len(base_data):
+    raise SystemExit(
+        f"boot partition size mismatch: generated={len(data)} base={len(base_data)}"
+    )
+if cur["orig"] > ref["orig"]:
+    raise SystemExit(
+        f"generated boot payload {cur['orig']} does not fit base AVB area {ref['orig']}"
+    )
+if ref["off"] + cur["size"] > len(data) - footer_size:
+    raise SystemExit("relocated VBMeta would overlap the AVB footer")
+
+vbmeta = data[cur["off"]:cur["off"] + cur["size"]]
+out = bytearray(len(data))
+out[:cur["orig"]] = data[:cur["orig"]]
+out[ref["off"]:ref["off"] + cur["size"]] = vbmeta
+
+footer = cur["footer"]
+struct.pack_into(
+    footer_struct,
+    footer,
+    0,
+    cur["magic"],
+    cur["major"],
+    cur["minor"],
+    ref["orig"],
+    ref["off"],
+    cur["size"],
+    cur["reserved"],
+)
+out[-footer_size:] = footer
+image.write_bytes(out)
+
+print(
+    f"relocated vbmeta: payload={cur['orig']} "
+    f"footer_original={ref['orig']} vbmeta_offset={ref['off']} vbmeta_size={cur['size']}"
+)
+PY
+}
+
 build_fire_boot_v3_v4() {
 	local vendor_ramdisk=$1
 	local base_boot_dir="${WORK_DIR}/base_boot"
@@ -535,6 +678,9 @@ build_fire_boot_v3_v4() {
 		--os_patch_level "$FIRE66_BOOT_OS_PATCH_LEVEL" \
 		--output "${DT_OUT}/boot.img" \
 		> "${DT_OUT}/mkbootimg-boot-v3.log" 2>&1
+	if [ "$FIRE66_BOOT_AVB_FOOTER" = 1 ]; then
+		add_fire_boot_avb_footer "${DT_OUT}/boot.img"
+	fi
 	boot_size=$(stat -c %s "${DT_OUT}/boot.img")
 	[ "$boot_size" -le "$FIRE66_BOOT_MAX_BYTES" ] ||
 		die "boot.img is larger than ${FIRE66_BOOT_MAX_BYTES} bytes"
