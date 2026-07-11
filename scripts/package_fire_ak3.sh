@@ -64,6 +64,7 @@ FIRE66_BOOT_AVB_OS_VERSION_PROP=${FIRE66_BOOT_AVB_OS_VERSION_PROP:-16}
 FIRE66_BOOT_AVB_SECURITY_PATCH_PROP=${FIRE66_BOOT_AVB_SECURITY_PATCH_PROP:-}
 FIRE66_BOOT_AVB_GEOMETRY_IMG=${FIRE66_BOOT_AVB_GEOMETRY_IMG:-}
 FIRE66_BOOT_AVB_RELOCATE_TO_BASE=${FIRE66_BOOT_AVB_RELOCATE_TO_BASE:-1}
+FIRE66_BOOT_AVB_PAD_HASH_TO_BASE=${FIRE66_BOOT_AVB_PAD_HASH_TO_BASE:-0}
 FIRE66_ALLOW_RAW_BOOT=${FIRE66_ALLOW_RAW_BOOT:-0}
 FIRE66_KERNEL_TEXT_OFFSET=${FIRE66_KERNEL_TEXT_OFFSET:-}
 FIRE66_VBMETA_KEY=${FIRE66_VBMETA_KEY:-${FIRE66_BOOT_AVB_KEY}}
@@ -690,7 +691,8 @@ add_fire_boot_avb_footer() {
 		props+=("--prop" "com.android.build.boot.fingerprint:${FIRE66_BOOT_AVB_FINGERPRINT}")
 	fi
 
-	if [ "$FIRE66_BOOT_AVB_RELOCATE_TO_BASE" = 1 ] &&
+	if [ "$FIRE66_BOOT_AVB_PAD_HASH_TO_BASE" = 1 ] &&
+		[ "$FIRE66_BOOT_AVB_RELOCATE_TO_BASE" = 1 ] &&
 		[ -n "$FIRE66_BOOT_AVB_GEOMETRY_IMG" ]; then
 		pad_fire_boot_payload_to_base_geometry "$image" "$FIRE66_BOOT_AVB_GEOMETRY_IMG"
 	fi
@@ -908,8 +910,11 @@ PY
 	' "$avb_info")
 	[ -n "$avb_original" ] || die "cannot parse boot AVB original image size from $avb_info"
 	[ -n "$avb_hash_size" ] || die "cannot parse boot AVB hash image size from $avb_info"
-	[ "$avb_original" = "$avb_hash_size" ] ||
-		die "boot AVB geometry mismatch: footer original=${avb_original}, hash descriptor image_size=${avb_hash_size}"
+	if [ "$avb_original" != "$avb_hash_size" ]; then
+		[ "$avb_hash_size" -le "$avb_original" ] ||
+			die "boot AVB hash image size exceeds footer original size: footer original=${avb_original}, hash descriptor image_size=${avb_hash_size}"
+		echo "Fire boot AVB geometry: footer original=${avb_original}, hash descriptor image_size=${avb_hash_size}"
+	fi
 }
 
 build_fire_partition_hash_vbmeta() {
