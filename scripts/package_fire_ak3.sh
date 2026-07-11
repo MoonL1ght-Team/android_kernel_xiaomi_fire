@@ -67,6 +67,11 @@ FIRE66_BOOT_AVB_RELOCATE_TO_BASE=${FIRE66_BOOT_AVB_RELOCATE_TO_BASE:-1}
 FIRE66_BOOT_AVB_PAD_HASH_TO_BASE=${FIRE66_BOOT_AVB_PAD_HASH_TO_BASE:-0}
 FIRE66_ALLOW_RAW_BOOT=${FIRE66_ALLOW_RAW_BOOT:-0}
 FIRE66_KERNEL_TEXT_OFFSET=${FIRE66_KERNEL_TEXT_OFFSET:-}
+FIRE66_GKI_BOOT_SIGNATURE=${FIRE66_GKI_BOOT_SIGNATURE:-}
+FIRE66_GKI_SIGNING_KEY=${FIRE66_GKI_SIGNING_KEY:-${FIRE66_BOOT_AVB_KEY}}
+FIRE66_GKI_SIGNING_ALGORITHM=${FIRE66_GKI_SIGNING_ALGORITHM:-${FIRE66_BOOT_AVB_ALGORITHM}}
+FIRE66_GKI_SIGNING_SIGNATURE_ARGS=${FIRE66_GKI_SIGNING_SIGNATURE_ARGS:-}
+FIRE66_GKI_SIGNING_AVBTOOL=${FIRE66_GKI_SIGNING_AVBTOOL:-${AVBTOOL}}
 FIRE66_VBMETA_KEY=${FIRE66_VBMETA_KEY:-${FIRE66_BOOT_AVB_KEY}}
 FIRE66_VBMETA_ALGORITHM=${FIRE66_VBMETA_ALGORITHM:-${FIRE66_BOOT_AVB_ALGORITHM}}
 FIRE66_VBMETA_ROLLBACK_INDEX=${FIRE66_VBMETA_ROLLBACK_INDEX:-0}
@@ -113,32 +118,36 @@ if [ -z "${FIRE66_BOOTCONFIG+x}" ]; then
 fi
 if [ -z "${FIRE66_BOOT_RAMDISK_VENDOR_MODULES+x}" ]; then
 	case "$FIRE66_BOOT_LAYOUT" in
-	boot_v3_vendor_boot|boot_v4_vendor_boot)
-		FIRE66_BOOT_RAMDISK_VENDOR_MODULES=1
-	;;
-	*)
-		FIRE66_BOOT_RAMDISK_VENDOR_MODULES=0
-	;;
+		*)
+			FIRE66_BOOT_RAMDISK_VENDOR_MODULES=0
+		;;
 	esac
 fi
 if [ -z "${FIRE66_BOOTCONFIG_IN_BOOT_RAMDISK+x}" ]; then
 	case "$FIRE66_BOOT_LAYOUT" in
-	boot_v3_vendor_boot|boot_v4_vendor_boot)
-		FIRE66_BOOTCONFIG_IN_BOOT_RAMDISK=1
-	;;
-	*)
-		FIRE66_BOOTCONFIG_IN_BOOT_RAMDISK=0
-	;;
+		*)
+			FIRE66_BOOTCONFIG_IN_BOOT_RAMDISK=0
+		;;
 	esac
 fi
 if [ -z "${FIRE66_BOOT_AVB_FOOTER+x}" ]; then
 	case "$FIRE66_BOOT_LAYOUT" in
-	boot_v3_vendor_boot|boot_v4_vendor_boot)
-		FIRE66_BOOT_AVB_FOOTER=1
+		boot_v3_vendor_boot|boot_v4_vendor_boot)
+			FIRE66_BOOT_AVB_FOOTER=1
 	;;
 	*)
 		FIRE66_BOOT_AVB_FOOTER=0
 	;;
+	esac
+fi
+if [ -z "$FIRE66_GKI_BOOT_SIGNATURE" ]; then
+	case "$FIRE66_BOOT_LAYOUT" in
+		boot_v4_vendor_boot)
+			FIRE66_GKI_BOOT_SIGNATURE=1
+		;;
+		*)
+			FIRE66_GKI_BOOT_SIGNATURE=0
+		;;
 	esac
 fi
 if { [ "$FIRE66_BOOT_LAYOUT" = boot_v3_vendor_boot ] ||
@@ -205,6 +214,8 @@ need_tool cpio
 [ "$FIRE66_BOOT_AVB_FOOTER" != 1 ] || [ -x "$AVBTOOL" ] || die "avbtool not executable: $AVBTOOL"
 [ "$AK3_FLASH_VBMETA" != 1 ] || [ -x "$AVBTOOL" ] || die "avbtool not executable: $AVBTOOL"
 [ "$FIRE66_BOOT_AVB_FOOTER" != 1 ] || [ -f "$FIRE66_BOOT_AVB_KEY" ] || die "Fire boot AVB key not found: $FIRE66_BOOT_AVB_KEY"
+[ "$FIRE66_GKI_BOOT_SIGNATURE" != 1 ] || [ -f "$FIRE66_GKI_SIGNING_KEY" ] || die "Fire GKI signing key not found: $FIRE66_GKI_SIGNING_KEY"
+[ "$FIRE66_GKI_BOOT_SIGNATURE" != 1 ] || [ -x "$FIRE66_GKI_SIGNING_AVBTOOL" ] || die "Fire GKI signing avbtool not executable: $FIRE66_GKI_SIGNING_AVBTOOL"
 [ "$AK3_FLASH_VBMETA" != 1 ] || [ -f "$FIRE66_VBMETA_KEY" ] || die "Fire vbmeta key not found: $FIRE66_VBMETA_KEY"
 [ "$AK3_FLASH_VBMETA" != 1 ] || [ -f "$FIRE66_VBMETA_SYSTEM_KEY" ] || die "Fire vbmeta_system key not found: $FIRE66_VBMETA_SYSTEM_KEY"
 [ "$AK3_FLASH_VBMETA" != 1 ] || [ -f "$FIRE66_VBMETA_VENDOR_KEY" ] || die "Fire vbmeta_vendor key not found: $FIRE66_VBMETA_VENDOR_KEY"
@@ -217,6 +228,7 @@ case "$FIRE66_BOOT_LAYOUT" in
 		if [ -z "$FIRE66_BASE_BOOT_IMG" ]; then
 			FIRE66_BASE_BOOT_IMG=$(
 				first_file \
+					/home/deb/crdroid_fire_payload_20260630/boot.img \
 					/home/deb/fire_recovery_current_latest/boot_a.img \
 					/home/deb/fire_boot_header_probe_20260710-155324/partitions/boot_a.img \
 				|| true
@@ -857,13 +869,14 @@ validate_fire_boot_partition_image() {
 	local avb_original avb_hash_size
 
 	need_tool python3
-	python3 - "$image" "$FIRE66_BOOT_PARTITION_BYTES" <<'PY'
+	python3 - "$image" "$FIRE66_BOOT_PARTITION_BYTES" "$FIRE66_GKI_BOOT_SIGNATURE" <<'PY'
 import pathlib
 import struct
 import sys
 
 image = pathlib.Path(sys.argv[1])
 expected_size = int(sys.argv[2], 0)
+expect_gki_signature = sys.argv[3] == "1"
 data = image.read_bytes()
 footer_struct = ">4sIIQQQ28s"
 footer_size = struct.calcsize(footer_struct)
@@ -884,8 +897,18 @@ if off + size > len(data) - footer_size:
     raise SystemExit(f"{image}: VBMeta area is outside the boot partition")
 if data[off:off + 4] != b"AVB0":
     raise SystemExit(f"{image}: missing embedded AVB0 VBMeta")
-if data[40:44] not in (b"\x03\x00\x00\x00", b"\x04\x00\x00\x00"):
+header_version = struct.unpack_from("<I", data, 40)[0]
+if header_version not in (3, 4):
     raise SystemExit(f"{image}: boot header is not v3/v4")
+if expect_gki_signature:
+    if header_version != 4:
+        raise SystemExit(f"{image}: GKI boot signature requires boot header v4")
+    boot_signature_size = struct.unpack_from("<I", data, 1580)[0]
+    if boot_signature_size != 4096:
+        raise SystemExit(
+            f"{image}: expected v4 GKI boot signature size 4096, "
+            f"got {boot_signature_size}"
+        )
 
 print(
     f"validated boot AVB image: size={len(data)} "
@@ -998,12 +1021,29 @@ build_fire_boot_v3_v4() {
 	local header_version=3
 	local boot_ramdisk="${DT_OUT}/boot-ramdisk.cpio.gz"
 	local boot_size
+	local -a gki_signature_args=()
 
 	[ -f "$FIRE66_BASE_BOOT_IMG" ] ||
 		die "FIRE66_BASE_BOOT_IMG is required for $FIRE66_BOOT_LAYOUT layout"
 	[ "$FIRE66_BOOT_LAYOUT" != boot_v4_vendor_boot ] || header_version=4
+	if [ "$header_version" = 4 ] && [ "$FIRE66_GKI_BOOT_SIGNATURE" = 1 ]; then
+		gki_signature_args=(
+			--gki_signing_algorithm "$FIRE66_GKI_SIGNING_ALGORITHM"
+			--gki_signing_key "$FIRE66_GKI_SIGNING_KEY"
+			--gki_signing_avbtool_path "$FIRE66_GKI_SIGNING_AVBTOOL"
+		)
+		if [ -n "$FIRE66_GKI_SIGNING_SIGNATURE_ARGS" ]; then
+			gki_signature_args+=(
+				--gki_signing_signature_args "$FIRE66_GKI_SIGNING_SIGNATURE_ARGS"
+			)
+		fi
+	fi
 
 	echo "==> Building Fire boot.img header v${header_version}"
+	echo "Base boot image: $FIRE66_BASE_BOOT_IMG"
+	if [ "${#gki_signature_args[@]}" -gt 0 ]; then
+		echo "==> Adding Fire boot.img v4 GKI signature section"
+	fi
 	rm -rf "$base_boot_dir"
 	mkdir -p "$base_boot_dir"
 	"$UNPACK_BOOTIMG" --boot_img "$FIRE66_BASE_BOOT_IMG" --out "$base_boot_dir" \
@@ -1021,6 +1061,7 @@ build_fire_boot_v3_v4() {
 		--os_version "$FIRE66_BOOT_OS_VERSION" \
 		--os_patch_level "$FIRE66_BOOT_OS_PATCH_LEVEL" \
 		--output "${DT_OUT}/boot.img" \
+		"${gki_signature_args[@]}" \
 		> "${DT_OUT}/mkbootimg-boot-v3.log" 2>&1
 	if [ "$FIRE66_BOOT_AVB_FOOTER" = 1 ]; then
 		add_fire_boot_avb_footer "${DT_OUT}/boot.img"
