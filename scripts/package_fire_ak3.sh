@@ -64,6 +64,7 @@ FIRE66_BOOT_AVB_OS_VERSION_PROP=${FIRE66_BOOT_AVB_OS_VERSION_PROP:-16}
 FIRE66_BOOT_AVB_SECURITY_PATCH_PROP=${FIRE66_BOOT_AVB_SECURITY_PATCH_PROP:-}
 FIRE66_BOOT_AVB_GEOMETRY_IMG=${FIRE66_BOOT_AVB_GEOMETRY_IMG:-}
 FIRE66_BOOT_AVB_RELOCATE_TO_BASE=${FIRE66_BOOT_AVB_RELOCATE_TO_BASE:-1}
+FIRE66_ALLOW_RAW_BOOT=${FIRE66_ALLOW_RAW_BOOT:-0}
 AK3_FLASH_DTBO=${AK3_FLASH_DTBO:-1}
 AK3_FLASH_VENDOR_BOOT=${AK3_FLASH_VENDOR_BOOT:-}
 LEGACY_DTBO_COMPAT=${LEGACY_DTBO_COMPAT:-${AK3_TEMPLATE}/dtbo.img}
@@ -124,6 +125,12 @@ if [ -z "${FIRE66_BOOT_AVB_FOOTER+x}" ]; then
 	;;
 	esac
 fi
+if { [ "$FIRE66_BOOT_LAYOUT" = boot_v3_vendor_boot ] ||
+	[ "$FIRE66_BOOT_LAYOUT" = boot_v4_vendor_boot ]; } &&
+	[ "$FIRE66_BOOT_AVB_FOOTER" != 1 ] &&
+	[ "$FIRE66_ALLOW_RAW_BOOT" != 1 ]; then
+	die "$FIRE66_BOOT_LAYOUT must package a full boot partition image with AVB footer; set FIRE66_ALLOW_RAW_BOOT=1 only for manual debugging"
+fi
 if [ -z "${FIRE66_VENDOR_BOOTCONFIG_STATIC+x}" ]; then
 	case "$FIRE66_BOOT_LAYOUT" in
 	boot_v4_vendor_boot)
@@ -176,6 +183,18 @@ need_tool cpio
 	die "unpack_bootimg not executable: $UNPACK_BOOTIMG"
 [ "$FIRE66_BOOT_LAYOUT" != boot_v4_vendor_boot ] || [ -x "$UNPACK_BOOTIMG" ] || \
 	die "unpack_bootimg not executable: $UNPACK_BOOTIMG"
+case "$FIRE66_BOOT_LAYOUT" in
+	boot_v3_vendor_boot|boot_v4_vendor_boot)
+		if [ -z "$FIRE66_BASE_BOOT_IMG" ]; then
+			FIRE66_BASE_BOOT_IMG=$(
+				first_file \
+					/home/deb/fire_recovery_current_latest/boot_a.img \
+					/home/deb/fire_boot_header_probe_20260710-155324/partitions/boot_a.img \
+				|| true
+			)
+		fi
+	;;
+esac
 case "$FIRE66_BOOT_LAYOUT" in
 	boot_v3_vendor_boot|boot_v4_vendor_boot)
 		[ -f "$FIRE66_BASE_BOOT_IMG" ] ||
@@ -615,7 +634,9 @@ if len(data) != len(base_data):
     )
 if cur["orig"] > ref["orig"]:
     raise SystemExit(
-        f"generated boot payload {cur['orig']} does not fit base AVB area {ref['orig']}"
+        f"generated boot payload {cur['orig']} does not fit base AVB area {ref['orig']}; "
+        "use the accepted Fire Android 16/crDroid boot image as FIRE66_BASE_BOOT_IMG, "
+        "not the older stock Android 12 boot image"
     )
 if ref["off"] + cur["size"] > len(data) - footer_size:
     raise SystemExit("relocated VBMeta would overlap the AVB footer")
@@ -644,6 +665,47 @@ image.write_bytes(out)
 print(
     f"relocated vbmeta: payload={cur['orig']} "
     f"footer_original={ref['orig']} vbmeta_offset={ref['off']} vbmeta_size={cur['size']}"
+)
+PY
+}
+
+validate_fire_boot_partition_image() {
+	local image=$1
+
+	need_tool python3
+	python3 - "$image" "$FIRE66_BOOT_PARTITION_BYTES" <<'PY'
+import pathlib
+import struct
+import sys
+
+image = pathlib.Path(sys.argv[1])
+expected_size = int(sys.argv[2], 0)
+data = image.read_bytes()
+footer_struct = ">4sIIQQQ28s"
+footer_size = struct.calcsize(footer_struct)
+
+if data[:8] != b"ANDROID!":
+    raise SystemExit(f"{image}: missing ANDROID! boot magic")
+if len(data) != expected_size:
+    raise SystemExit(
+        f"{image}: expected full boot partition size {expected_size}, got {len(data)}"
+    )
+
+magic, major, minor, orig, off, size, _reserved = struct.unpack(
+    footer_struct, data[-footer_size:]
+)
+if magic != b"AVBf":
+    raise SystemExit(f"{image}: missing AVB footer")
+if off + size > len(data) - footer_size:
+    raise SystemExit(f"{image}: VBMeta area is outside the boot partition")
+if data[off:off + 4] != b"AVB0":
+    raise SystemExit(f"{image}: missing embedded AVB0 VBMeta")
+if data[40:44] not in (b"\x03\x00\x00\x00", b"\x04\x00\x00\x00"):
+    raise SystemExit(f"{image}: boot header is not v3/v4")
+
+print(
+    f"validated boot AVB image: size={len(data)} "
+    f"original={orig} vbmeta_offset={off} vbmeta_size={size}"
 )
 PY
 }
@@ -680,6 +742,7 @@ build_fire_boot_v3_v4() {
 		> "${DT_OUT}/mkbootimg-boot-v3.log" 2>&1
 	if [ "$FIRE66_BOOT_AVB_FOOTER" = 1 ]; then
 		add_fire_boot_avb_footer "${DT_OUT}/boot.img"
+		validate_fire_boot_partition_image "${DT_OUT}/boot.img"
 	fi
 	boot_size=$(stat -c %s "${DT_OUT}/boot.img")
 	[ "$boot_size" -le "$FIRE66_BOOT_MAX_BYTES" ] ||
