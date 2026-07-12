@@ -73,7 +73,7 @@ FIRE66_GKI_SIGNING_ALGORITHM=${FIRE66_GKI_SIGNING_ALGORITHM:-${FIRE66_BOOT_AVB_A
 FIRE66_GKI_SIGNING_SIGNATURE_ARGS=${FIRE66_GKI_SIGNING_SIGNATURE_ARGS:-}
 FIRE66_GKI_SIGNING_AVBTOOL=${FIRE66_GKI_SIGNING_AVBTOOL:-${AVBTOOL}}
 FIRE66_VBMETA_KEY=${FIRE66_VBMETA_KEY:-${FIRE66_BOOT_AVB_KEY}}
-FIRE66_VBMETA_ALGORITHM=${FIRE66_VBMETA_ALGORITHM:-${FIRE66_BOOT_AVB_ALGORITHM}}
+FIRE66_VBMETA_ALGORITHM=${FIRE66_VBMETA_ALGORITHM:-}
 FIRE66_VBMETA_ROLLBACK_INDEX=${FIRE66_VBMETA_ROLLBACK_INDEX:-0}
 FIRE66_VBMETA_ROLLBACK_INDEX_LOCATION=${FIRE66_VBMETA_ROLLBACK_INDEX_LOCATION:-0}
 FIRE66_VBMETA_FLAGS=${FIRE66_VBMETA_FLAGS:-}
@@ -113,6 +113,16 @@ if [ -z "$FIRE66_VBMETA_FLAGS" ]; then
 		;;
 		*)
 			FIRE66_VBMETA_FLAGS=1
+		;;
+	esac
+fi
+if [ -z "$FIRE66_VBMETA_ALGORITHM" ]; then
+	case "$FIRE66_BOOT_LAYOUT" in
+		boot_v3_vendor_boot|boot_v4_vendor_boot)
+			FIRE66_VBMETA_ALGORITHM=NONE
+		;;
+		*)
+			FIRE66_VBMETA_ALGORITHM=$FIRE66_BOOT_AVB_ALGORITHM
 		;;
 	esac
 fi
@@ -259,7 +269,9 @@ need_tool cpio
 [ "$FIRE66_BOOT_AVB_FOOTER" != 1 ] || [ -f "$FIRE66_BOOT_AVB_KEY" ] || die "Fire boot AVB key not found: $FIRE66_BOOT_AVB_KEY"
 [ "$FIRE66_GKI_BOOT_SIGNATURE" != 1 ] || [ -f "$FIRE66_GKI_SIGNING_KEY" ] || die "Fire GKI signing key not found: $FIRE66_GKI_SIGNING_KEY"
 [ "$FIRE66_GKI_BOOT_SIGNATURE" != 1 ] || [ -x "$FIRE66_GKI_SIGNING_AVBTOOL" ] || die "Fire GKI signing avbtool not executable: $FIRE66_GKI_SIGNING_AVBTOOL"
-[ "$AK3_FLASH_VBMETA" != 1 ] || [ -f "$FIRE66_VBMETA_KEY" ] || die "Fire vbmeta key not found: $FIRE66_VBMETA_KEY"
+if [ "$AK3_FLASH_VBMETA" = 1 ] && [ "$FIRE66_VBMETA_ALGORITHM" != NONE ]; then
+	[ -f "$FIRE66_VBMETA_KEY" ] || die "Fire vbmeta key not found: $FIRE66_VBMETA_KEY"
+fi
 [ "$AK3_FLASH_VBMETA" != 1 ] || [ -f "$FIRE66_VBMETA_SYSTEM_KEY" ] || die "Fire vbmeta_system key not found: $FIRE66_VBMETA_SYSTEM_KEY"
 [ "$AK3_FLASH_VBMETA" != 1 ] || [ -f "$FIRE66_VBMETA_VENDOR_KEY" ] || die "Fire vbmeta_vendor key not found: $FIRE66_VBMETA_VENDOR_KEY"
 [ "$FIRE66_BOOT_LAYOUT" != boot_v3_vendor_boot ] || [ -x "$UNPACK_BOOTIMG" ] || \
@@ -1033,14 +1045,17 @@ build_fire_partition_hash_vbmeta() {
 	local partition_size=$3
 	local out=$4
 	local hash_src="${DT_OUT}/${partition_name}.hashsrc.img"
+	local -a hash_auth_args=("--algorithm" "$FIRE66_VBMETA_ALGORITHM")
 
 	cp -f "$image" "$hash_src"
+	if [ "$FIRE66_VBMETA_ALGORITHM" != NONE ]; then
+		hash_auth_args+=("--key" "$FIRE66_VBMETA_KEY")
+	fi
 	"$AVBTOOL" add_hash_footer \
 		--image "$hash_src" \
 		--partition_size "$partition_size" \
 		--partition_name "$partition_name" \
-		--algorithm "$FIRE66_VBMETA_ALGORITHM" \
-		--key "$FIRE66_VBMETA_KEY" \
+		"${hash_auth_args[@]}" \
 		--rollback_index 1 \
 		--rollback_index_location 0 \
 		--output_vbmeta_image "$out" \
@@ -1058,8 +1073,12 @@ build_fire_vbmeta() {
 	local boot_hash_image
 	local system_pubkey="${DT_OUT}/vbmeta_system.avbpubkey"
 	local vendor_pubkey="${DT_OUT}/vbmeta_vendor.avbpubkey"
+	local -a vbmeta_auth_args=("--algorithm" "$FIRE66_VBMETA_ALGORITHM")
 
 	[ "$AK3_FLASH_VBMETA" = 1 ] || return 0
+	if [ "$FIRE66_VBMETA_ALGORITHM" != NONE ]; then
+		vbmeta_auth_args+=("--key" "$FIRE66_VBMETA_KEY")
+	fi
 
 	if [ -n "$FIRE66_VBMETA_DTBO_FINGERPRINT" ]; then
 		props+=("--prop" "com.android.build.dtbo.fingerprint:${FIRE66_VBMETA_DTBO_FINGERPRINT}")
@@ -1110,8 +1129,7 @@ build_fire_vbmeta() {
 	"$AVBTOOL" make_vbmeta_image \
 		--output "${DT_OUT}/vbmeta.img" \
 		--padding_size "$FIRE66_VBMETA_PADDING_SIZE" \
-		--algorithm "$FIRE66_VBMETA_ALGORITHM" \
-		--key "$FIRE66_VBMETA_KEY" \
+		"${vbmeta_auth_args[@]}" \
 		--rollback_index "$FIRE66_VBMETA_ROLLBACK_INDEX" \
 		--rollback_index_location "$FIRE66_VBMETA_ROLLBACK_INDEX_LOCATION" \
 		--flags "$FIRE66_VBMETA_FLAGS" \
