@@ -119,7 +119,7 @@ fi
 if [ -z "$FIRE66_VBMETA_ALGORITHM" ]; then
 	case "$FIRE66_BOOT_LAYOUT" in
 		boot_v3_vendor_boot|boot_v4_vendor_boot)
-			FIRE66_VBMETA_ALGORITHM=NONE
+			FIRE66_VBMETA_ALGORITHM=$FIRE66_BOOT_AVB_ALGORITHM
 		;;
 		*)
 			FIRE66_VBMETA_ALGORITHM=$FIRE66_BOOT_AVB_ALGORITHM
@@ -129,7 +129,7 @@ fi
 if [ -z "${FIRE66_VBMETA_BOOT_DESCRIPTOR+x}" ]; then
 	case "$FIRE66_BOOT_LAYOUT" in
 		boot_v3_vendor_boot|boot_v4_vendor_boot)
-			FIRE66_VBMETA_BOOT_DESCRIPTOR=hash
+			FIRE66_VBMETA_BOOT_DESCRIPTOR=chain
 		;;
 		*)
 			FIRE66_VBMETA_BOOT_DESCRIPTOR=chain
