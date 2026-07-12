@@ -55,6 +55,10 @@ FIRE66_BOOT_OS_VERSION=${FIRE66_BOOT_OS_VERSION:-16.0.0}
 FIRE66_BOOT_OS_PATCH_LEVEL=${FIRE66_BOOT_OS_PATCH_LEVEL:-2026-06}
 FIRE66_BOOT_MAX_BYTES=${FIRE66_BOOT_MAX_BYTES:-134217728}
 FIRE66_BOOT_PARTITION_BYTES=${FIRE66_BOOT_PARTITION_BYTES:-${FIRE66_BOOT_MAX_BYTES}}
+FIRE66_VENDOR_BOOT_PARTITION_BYTES=${FIRE66_VENDOR_BOOT_PARTITION_BYTES:-67108864}
+FIRE66_LK_AVB_HEAP_BYTES=${FIRE66_LK_AVB_HEAP_BYTES:-0x8c00000}
+FIRE66_LK_AVB_HEAP_RESERVE_BYTES=${FIRE66_LK_AVB_HEAP_RESERVE_BYTES:-0x400000}
+FIRE66_ALLOW_AVB_HEAP_OVERSUBSCRIBE=${FIRE66_ALLOW_AVB_HEAP_OVERSUBSCRIBE:-0}
 FIRE66_BOOT_AVB_KEY=${FIRE66_BOOT_AVB_KEY:-${KERNEL_ROOT}/prebuilts/kernel-build-tools/linux-x86/share/avb/testkey_rsa2048.pem}
 FIRE66_BOOT_AVB_ALGORITHM=${FIRE66_BOOT_AVB_ALGORITHM:-SHA256_RSA2048}
 FIRE66_BOOT_AVB_ROLLBACK_INDEX=${FIRE66_BOOT_AVB_ROLLBACK_INDEX:-1}
@@ -100,7 +104,7 @@ VENDOR_BOOT_KERNEL_OFFSET=${VENDOR_BOOT_KERNEL_OFFSET:-0x00008000}
 VENDOR_BOOT_RAMDISK_OFFSET=${VENDOR_BOOT_RAMDISK_OFFSET:-0x07c08000}
 VENDOR_BOOT_TAGS_OFFSET=${VENDOR_BOOT_TAGS_OFFSET:-0x0bc08000}
 VENDOR_BOOT_DTB_OFFSET=${VENDOR_BOOT_DTB_OFFSET:-0x0bc08000}
-VENDOR_BOOT_MAX_BYTES=${VENDOR_BOOT_MAX_BYTES:-67108864}
+VENDOR_BOOT_MAX_BYTES=${VENDOR_BOOT_MAX_BYTES:-${FIRE66_VENDOR_BOOT_PARTITION_BYTES}}
 
 case "$FIRE66_BOOT_LAYOUT" in
 	compat|hybrid|vendor_boot|boot_v3_vendor_boot|boot_v4_vendor_boot) ;;
@@ -131,7 +135,8 @@ if [ -z "${FIRE66_VBMETA_BOOT_DESCRIPTOR+x}" ]; then
 		boot_v3_vendor_boot|boot_v4_vendor_boot)
 			# Stock Fire LK runs AVB in unlocked/orange mode and tries to load
 			# a top-level boot hash descriptor as the full 128 MiB partition.
-			# Keep boot chained so LK can verify the embedded footer path first.
+			# Keep boot chained for diagnostics; the heap budget check below
+			# still requires a smaller vendor_boot partition or a larger LK heap.
 			FIRE66_VBMETA_BOOT_DESCRIPTOR=chain
 		;;
 		*)
@@ -230,6 +235,18 @@ if { [ "$FIRE66_BOOT_LAYOUT" = boot_v3_vendor_boot ] ||
 	[ "$FIRE66_BOOT_LAYOUT" = boot_v4_vendor_boot ]; } &&
 	[ "$VENDOR_BOOT_PAGESIZE" != 4096 ]; then
 	die "Fire LK v3/v4 vendor_boot parser expects 4096-byte pages; got $VENDOR_BOOT_PAGESIZE"
+fi
+if [ "$VENDOR_BOOT_MAX_BYTES" -gt "$FIRE66_VENDOR_BOOT_PARTITION_BYTES" ]; then
+	die "VENDOR_BOOT_MAX_BYTES (${VENDOR_BOOT_MAX_BYTES}) exceeds vendor_boot partition size (${FIRE66_VENDOR_BOOT_PARTITION_BYTES})"
+fi
+if [ "$FIRE66_ALLOW_AVB_HEAP_OVERSUBSCRIBE" != 1 ] &&
+	{ [ "$FIRE66_BOOT_LAYOUT" = boot_v3_vendor_boot ] ||
+		[ "$FIRE66_BOOT_LAYOUT" = boot_v4_vendor_boot ]; }; then
+	avb_loaded_bytes=$((FIRE66_BOOT_PARTITION_BYTES + FIRE66_VENDOR_BOOT_PARTITION_BYTES))
+	avb_heap_budget=$((FIRE66_LK_AVB_HEAP_BYTES - FIRE66_LK_AVB_HEAP_RESERVE_BYTES))
+	if [ "$avb_loaded_bytes" -gt "$avb_heap_budget" ]; then
+		die "$FIRE66_BOOT_LAYOUT cannot boot on stock Fire LK AVB heap: boot partition (${FIRE66_BOOT_PARTITION_BYTES}) + vendor_boot partition (${FIRE66_VENDOR_BOOT_PARTITION_BYTES}) exceeds heap budget (${avb_heap_budget}); use a signed LK with larger AVB heap or a smaller vendor_boot GPT/partition size, or set FIRE66_ALLOW_AVB_HEAP_OVERSUBSCRIBE=1 only for diagnostics"
+	fi
 fi
 if [ -z "$AK3_FLASH_VENDOR_BOOT" ]; then
 	if [ "$FIRE66_BOOT_LAYOUT" = vendor_boot ] ||
@@ -1126,7 +1143,7 @@ build_fire_vbmeta() {
 	build_fire_partition_hash_vbmeta \
 		"${DT_OUT}/vendor_boot.img" \
 		vendor_boot \
-		"$VENDOR_BOOT_MAX_BYTES" \
+		"$FIRE66_VENDOR_BOOT_PARTITION_BYTES" \
 		"$vendor_boot_desc"
 
 	"$AVBTOOL" make_vbmeta_image \
