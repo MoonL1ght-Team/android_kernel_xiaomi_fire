@@ -147,7 +147,11 @@ fi
 if [ -z "${FIRE66_BOOT_AVB_FOOTER+x}" ]; then
 	case "$FIRE66_BOOT_LAYOUT" in
 		boot_v3_vendor_boot|boot_v4_vendor_boot)
-			FIRE66_BOOT_AVB_FOOTER=1
+			if [ "$FIRE66_VBMETA_BOOT_DESCRIPTOR" = hash ]; then
+				FIRE66_BOOT_AVB_FOOTER=0
+			else
+				FIRE66_BOOT_AVB_FOOTER=1
+			fi
 	;;
 	*)
 		FIRE66_BOOT_AVB_FOOTER=0
@@ -177,12 +181,13 @@ fi
 if { [ "$FIRE66_BOOT_LAYOUT" = boot_v3_vendor_boot ] ||
 	[ "$FIRE66_BOOT_LAYOUT" = boot_v4_vendor_boot ]; } &&
 	[ "$FIRE66_BOOT_AVB_FOOTER" != 1 ] &&
+	[ "$FIRE66_VBMETA_BOOT_DESCRIPTOR" != hash ] &&
 	[ "$FIRE66_ALLOW_RAW_BOOT" != 1 ]; then
-	die "$FIRE66_BOOT_LAYOUT must package a full boot partition image with AVB footer; set FIRE66_ALLOW_RAW_BOOT=1 only for manual debugging"
+	die "$FIRE66_BOOT_LAYOUT raw boot image requires FIRE66_VBMETA_BOOT_DESCRIPTOR=hash; set FIRE66_ALLOW_RAW_BOOT=1 only for manual debugging"
 fi
-if [ "$FIRE66_VBMETA_BOOT_DESCRIPTOR" = hash ] &&
+if [ "$FIRE66_VBMETA_BOOT_DESCRIPTOR" = chain ] &&
 	[ "$FIRE66_BOOT_AVB_FOOTER" != 1 ]; then
-	die "FIRE66_VBMETA_BOOT_DESCRIPTOR=hash requires FIRE66_BOOT_AVB_FOOTER=1"
+	die "FIRE66_VBMETA_BOOT_DESCRIPTOR=chain requires FIRE66_BOOT_AVB_FOOTER=1"
 fi
 if [ -z "${FIRE66_VENDOR_BOOTCONFIG_STATIC+x}" ]; then
 	case "$FIRE66_BOOT_LAYOUT" in
@@ -968,6 +973,50 @@ PY
 	fi
 }
 
+pad_fire_raw_boot_partition_image() {
+	local image=$1
+	local hash_src=$2
+
+	need_tool python3
+	echo "==> Padding Fire raw boot image to full boot partition"
+	python3 - "$image" "$hash_src" "$FIRE66_BOOT_PARTITION_BYTES" "$FIRE66_GKI_BOOT_SIGNATURE" <<'PY'
+import pathlib
+import struct
+import sys
+
+image = pathlib.Path(sys.argv[1])
+hash_src = pathlib.Path(sys.argv[2])
+partition_size = int(sys.argv[3], 0)
+expect_gki_signature = sys.argv[4] == "1"
+data = image.read_bytes()
+
+if data[:8] != b"ANDROID!":
+    raise SystemExit(f"{image}: missing ANDROID! boot magic")
+if len(data) > partition_size:
+    raise SystemExit(
+        f"{image}: raw boot payload {len(data)} exceeds boot partition {partition_size}"
+    )
+header_version = struct.unpack_from("<I", data, 40)[0]
+if header_version not in (3, 4):
+    raise SystemExit(f"{image}: boot header is not v3/v4")
+if expect_gki_signature:
+    if header_version != 4:
+        raise SystemExit(f"{image}: GKI boot signature requires boot header v4")
+    boot_signature_size = struct.unpack_from("<I", data, 1580)[0]
+    if boot_signature_size != 4096:
+        raise SystemExit(
+            f"{image}: expected v4 GKI boot signature size 4096, "
+            f"got {boot_signature_size}"
+        )
+
+hash_src.write_bytes(data)
+if len(data) < partition_size:
+    image.write_bytes(data + b"\0" * (partition_size - len(data)))
+
+print(f"padded raw boot partition: payload={len(data)} partition={partition_size}")
+PY
+}
+
 build_fire_partition_hash_vbmeta() {
 	local image=$1
 	local partition_name=$2
@@ -992,9 +1041,11 @@ build_fire_partition_hash_vbmeta() {
 build_fire_vbmeta() {
 	local -a props=()
 	local -a boot_descriptor_args=()
+	local boot_hash_desc="${DT_OUT}/boot.desc.vbmeta"
 	local dtbo_desc="${DT_OUT}/dtbo.desc.vbmeta"
 	local vendor_boot_desc="${DT_OUT}/vendor_boot.desc.vbmeta"
 	local boot_pubkey="${DT_OUT}/boot.avbpubkey"
+	local boot_hash_image
 	local system_pubkey="${DT_OUT}/vbmeta_system.avbpubkey"
 	local vendor_pubkey="${DT_OUT}/vbmeta_vendor.avbpubkey"
 
@@ -1013,9 +1064,23 @@ build_fire_vbmeta() {
 			)
 		;;
 		hash)
-			boot_descriptor_args=(
-				--include_descriptors_from_image "${DT_OUT}/boot.img"
-			)
+			boot_hash_image=${FIRE66_BOOT_HASH_DESCRIPTOR_IMAGE:-}
+			if [ -n "$boot_hash_image" ]; then
+				build_fire_partition_hash_vbmeta \
+					"$boot_hash_image" \
+					boot \
+					"$FIRE66_BOOT_PARTITION_BYTES" \
+					"$boot_hash_desc"
+				boot_descriptor_args=(
+					--include_descriptors_from_image "$boot_hash_desc"
+				)
+			else
+				[ "$FIRE66_BOOT_AVB_FOOTER" = 1 ] ||
+					die "raw boot hash descriptor source is missing"
+				boot_descriptor_args=(
+					--include_descriptors_from_image "${DT_OUT}/boot.img"
+				)
+			fi
 		;;
 	esac
 	"$AVBTOOL" extract_public_key --key "$FIRE66_VBMETA_SYSTEM_KEY" --output "$system_pubkey"
@@ -1109,6 +1174,11 @@ build_fire_boot_v3_v4() {
 	if [ "$FIRE66_BOOT_AVB_FOOTER" = 1 ]; then
 		add_fire_boot_avb_footer "${DT_OUT}/boot.img"
 		validate_fire_boot_partition_image "${DT_OUT}/boot.img"
+	elif [ "$FIRE66_VBMETA_BOOT_DESCRIPTOR" = hash ]; then
+		FIRE66_BOOT_HASH_DESCRIPTOR_IMAGE="${DT_OUT}/boot.raw.img"
+		pad_fire_raw_boot_partition_image \
+			"${DT_OUT}/boot.img" \
+			"$FIRE66_BOOT_HASH_DESCRIPTOR_IMAGE"
 	fi
 	boot_size=$(stat -c %s "${DT_OUT}/boot.img")
 	[ "$boot_size" -le "$FIRE66_BOOT_MAX_BYTES" ] ||
