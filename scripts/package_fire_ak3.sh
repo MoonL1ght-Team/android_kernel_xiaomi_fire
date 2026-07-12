@@ -106,6 +106,20 @@ case "$FIRE66_BOOT_LAYOUT" in
 	compat|hybrid|vendor_boot|boot_v3_vendor_boot|boot_v4_vendor_boot) ;;
 	*) die "unsupported FIRE66_BOOT_LAYOUT: $FIRE66_BOOT_LAYOUT" ;;
 esac
+if [ -z "${FIRE66_VBMETA_BOOT_DESCRIPTOR+x}" ]; then
+	case "$FIRE66_BOOT_LAYOUT" in
+		boot_v3_vendor_boot|boot_v4_vendor_boot)
+			FIRE66_VBMETA_BOOT_DESCRIPTOR=hash
+		;;
+		*)
+			FIRE66_VBMETA_BOOT_DESCRIPTOR=chain
+		;;
+	esac
+fi
+case "$FIRE66_VBMETA_BOOT_DESCRIPTOR" in
+	chain|hash) ;;
+	*) die "unsupported FIRE66_VBMETA_BOOT_DESCRIPTOR: $FIRE66_VBMETA_BOOT_DESCRIPTOR" ;;
+esac
 if [ -z "${FIRE66_BOOTCONFIG+x}" ]; then
 	case "$FIRE66_BOOT_LAYOUT" in
 	boot_v3_vendor_boot|boot_v4_vendor_boot)
@@ -165,6 +179,10 @@ if { [ "$FIRE66_BOOT_LAYOUT" = boot_v3_vendor_boot ] ||
 	[ "$FIRE66_BOOT_AVB_FOOTER" != 1 ] &&
 	[ "$FIRE66_ALLOW_RAW_BOOT" != 1 ]; then
 	die "$FIRE66_BOOT_LAYOUT must package a full boot partition image with AVB footer; set FIRE66_ALLOW_RAW_BOOT=1 only for manual debugging"
+fi
+if [ "$FIRE66_VBMETA_BOOT_DESCRIPTOR" = hash ] &&
+	[ "$FIRE66_BOOT_AVB_FOOTER" != 1 ]; then
+	die "FIRE66_VBMETA_BOOT_DESCRIPTOR=hash requires FIRE66_BOOT_AVB_FOOTER=1"
 fi
 if [ -z "${FIRE66_VENDOR_BOOTCONFIG_STATIC+x}" ]; then
 	case "$FIRE66_BOOT_LAYOUT" in
@@ -973,6 +991,7 @@ build_fire_partition_hash_vbmeta() {
 
 build_fire_vbmeta() {
 	local -a props=()
+	local -a boot_descriptor_args=()
 	local dtbo_desc="${DT_OUT}/dtbo.desc.vbmeta"
 	local vendor_boot_desc="${DT_OUT}/vendor_boot.desc.vbmeta"
 	local boot_pubkey="${DT_OUT}/boot.avbpubkey"
@@ -986,7 +1005,19 @@ build_fire_vbmeta() {
 	fi
 
 	echo "==> Building Fire top-level vbmeta"
-	"$AVBTOOL" extract_public_key --key "$FIRE66_BOOT_AVB_KEY" --output "$boot_pubkey"
+	case "$FIRE66_VBMETA_BOOT_DESCRIPTOR" in
+		chain)
+			"$AVBTOOL" extract_public_key --key "$FIRE66_BOOT_AVB_KEY" --output "$boot_pubkey"
+			boot_descriptor_args=(
+				--chain_partition "boot:${FIRE66_VBMETA_BOOT_ROLLBACK_INDEX_LOCATION}:${boot_pubkey}"
+			)
+		;;
+		hash)
+			boot_descriptor_args=(
+				--include_descriptors_from_image "${DT_OUT}/boot.img"
+			)
+		;;
+	esac
 	"$AVBTOOL" extract_public_key --key "$FIRE66_VBMETA_SYSTEM_KEY" --output "$system_pubkey"
 	"$AVBTOOL" extract_public_key --key "$FIRE66_VBMETA_VENDOR_KEY" --output "$vendor_pubkey"
 
@@ -1009,16 +1040,18 @@ build_fire_vbmeta() {
 		--rollback_index "$FIRE66_VBMETA_ROLLBACK_INDEX" \
 		--rollback_index_location "$FIRE66_VBMETA_ROLLBACK_INDEX_LOCATION" \
 		--flags "$FIRE66_VBMETA_FLAGS" \
-		--chain_partition "boot:${FIRE66_VBMETA_BOOT_ROLLBACK_INDEX_LOCATION}:${boot_pubkey}" \
 		--chain_partition "vbmeta_system:${FIRE66_VBMETA_SYSTEM_ROLLBACK_INDEX_LOCATION}:${system_pubkey}" \
 		--chain_partition "vbmeta_vendor:${FIRE66_VBMETA_VENDOR_ROLLBACK_INDEX_LOCATION}:${vendor_pubkey}" \
 		"${props[@]}" \
+		"${boot_descriptor_args[@]}" \
 		--include_descriptors_from_image "$dtbo_desc" \
 		--include_descriptors_from_image "$vendor_boot_desc" \
 		> "${DT_OUT}/avbtool-vbmeta.log" 2>&1
 
 	"$AVBTOOL" info_image --image "${DT_OUT}/vbmeta.img" \
 		> "${DT_OUT}/avbtool-vbmeta-info.log" 2>&1
+	grep -q 'Partition Name:[[:space:]]*boot$' "${DT_OUT}/avbtool-vbmeta-info.log" ||
+		die "generated vbmeta.img does not describe boot"
 	grep -q 'Partition Name:.*vendor_boot' "${DT_OUT}/avbtool-vbmeta-info.log" ||
 		die "generated vbmeta.img does not describe vendor_boot"
 	grep -q 'Partition Name:.*dtbo' "${DT_OUT}/avbtool-vbmeta-info.log" ||
