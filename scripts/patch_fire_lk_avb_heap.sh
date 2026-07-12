@@ -3,6 +3,10 @@
 
 set -euo pipefail
 
+# Diagnostic-only helper. Fire's preloader verifies the LK payload after
+# certificate validation, so a patched LK is not bootable on the stock SBC path.
+# Production v4 GKI packages must keep the signed stock LK.
+
 die() {
 	echo "error: $*" >&2
 	exit 1

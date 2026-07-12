@@ -109,7 +109,7 @@ esac
 if [ -z "$FIRE66_VBMETA_FLAGS" ]; then
 	case "$FIRE66_BOOT_LAYOUT" in
 		boot_v3_vendor_boot|boot_v4_vendor_boot)
-			FIRE66_VBMETA_FLAGS=3
+			FIRE66_VBMETA_FLAGS=1
 		;;
 		*)
 			FIRE66_VBMETA_FLAGS=1
@@ -129,7 +129,7 @@ fi
 if [ -z "${FIRE66_VBMETA_BOOT_DESCRIPTOR+x}" ]; then
 	case "$FIRE66_BOOT_LAYOUT" in
 		boot_v3_vendor_boot|boot_v4_vendor_boot)
-			FIRE66_VBMETA_BOOT_DESCRIPTOR=chain
+			FIRE66_VBMETA_BOOT_DESCRIPTOR=hash
 		;;
 		*)
 			FIRE66_VBMETA_BOOT_DESCRIPTOR=chain
