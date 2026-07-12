@@ -129,7 +129,10 @@ fi
 if [ -z "${FIRE66_VBMETA_BOOT_DESCRIPTOR+x}" ]; then
 	case "$FIRE66_BOOT_LAYOUT" in
 		boot_v3_vendor_boot|boot_v4_vendor_boot)
-			FIRE66_VBMETA_BOOT_DESCRIPTOR=hash
+			# Stock Fire LK runs AVB in unlocked/orange mode and tries to load
+			# a top-level boot hash descriptor as the full 128 MiB partition.
+			# Keep boot chained so LK can verify the embedded footer path first.
+			FIRE66_VBMETA_BOOT_DESCRIPTOR=chain
 		;;
 		*)
 			FIRE66_VBMETA_BOOT_DESCRIPTOR=chain
