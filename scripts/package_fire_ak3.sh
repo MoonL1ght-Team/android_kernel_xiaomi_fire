@@ -47,9 +47,13 @@ FDTOVERLAY=${FDTOVERLAY:-$(command -v fdtoverlay || true)}
 STRIP=${STRIP:-$(command -v llvm-strip || true)}
 FIRE66_BOOT_LAYOUT=${FIRE66_BOOT_LAYOUT:-hybrid}
 FIRE66_KERNEL_COMPRESSION=${FIRE66_KERNEL_COMPRESSION:-gzip}
-FIRE66_BOOT_CMDLINE=${FIRE66_BOOT_CMDLINE:-"bootopt=64S3,32N2,64N2"}
+FIRE66_BOOT_CMDLINE_SET=${FIRE66_BOOT_CMDLINE+x}
+FIRE66_VENDOR_CMDLINE_SET=${FIRE66_VENDOR_CMDLINE+x}
+FIRE66_BOOT_CMDLINE=${FIRE66_BOOT_CMDLINE:-}
 FIRE66_VENDOR_CMDLINE=${FIRE66_VENDOR_CMDLINE:-}
 FIRE66_BOOTCONFIG_FILE=${FIRE66_BOOTCONFIG_FILE:-}
+FIRE66_VENDOR_BOOT_FSTAB=${FIRE66_VENDOR_BOOT_FSTAB:-}
+FIRE66_VENDOR_BOOT_FSTAB_NAME=${FIRE66_VENDOR_BOOT_FSTAB_NAME:-fstab.mt6768}
 FIRE66_BASE_BOOT_IMG=${FIRE66_BASE_BOOT_IMG:-}
 FIRE66_BOOT_OS_VERSION=${FIRE66_BOOT_OS_VERSION:-16.0.0}
 FIRE66_BOOT_OS_PATCH_LEVEL=${FIRE66_BOOT_OS_PATCH_LEVEL:-2026-06}
@@ -71,6 +75,7 @@ FIRE66_BOOT_AVB_RELOCATE_TO_BASE=${FIRE66_BOOT_AVB_RELOCATE_TO_BASE:-1}
 FIRE66_BOOT_AVB_PAD_HASH_TO_BASE=${FIRE66_BOOT_AVB_PAD_HASH_TO_BASE:-}
 FIRE66_ALLOW_RAW_BOOT=${FIRE66_ALLOW_RAW_BOOT:-0}
 FIRE66_KERNEL_TEXT_OFFSET=${FIRE66_KERNEL_TEXT_OFFSET:-}
+FIRE66_EXPECT_KERNEL_TEXT_OFFSET=${FIRE66_EXPECT_KERNEL_TEXT_OFFSET:-${FIRE66_KERNEL_TEXT_OFFSET}}
 FIRE66_GKI_BOOT_SIGNATURE=${FIRE66_GKI_BOOT_SIGNATURE:-}
 FIRE66_GKI_SIGNING_KEY=${FIRE66_GKI_SIGNING_KEY:-${FIRE66_BOOT_AVB_KEY}}
 FIRE66_GKI_SIGNING_ALGORITHM=${FIRE66_GKI_SIGNING_ALGORITHM:-${FIRE66_BOOT_AVB_ALGORITHM}}
@@ -96,7 +101,9 @@ LEGACY_DTBO_COMPAT=${LEGACY_DTBO_COMPAT:-${AK3_TEMPLATE}/dtbo.img}
 DTBO_ENTRY_COUNT=${DTBO_ENTRY_COUNT:-1}
 LK_DTB_COMPAT=${LK_DTB_COMPAT:-}
 SKIP_AK3=${SKIP_AK3:-0}
+FIRE66_ROM_DIST_ONLY=${FIRE66_ROM_DIST_ONLY:-0}
 STRIP_DEBUG_MODULES=${STRIP_DEBUG_MODULES:-1}
+FIRST_STAGE_VENDOR_BOOT_MODULES_FILE=${FIRST_STAGE_VENDOR_BOOT_MODULES_FILE:-}
 FIRST_STAGE_VENDOR_BOOT_MODULES=${FIRST_STAGE_VENDOR_BOOT_MODULES:-"mtk-pmic-wrap.ko mt6358-regulator.ko clk-mt6768.ko clk-mt6768-pg.ko pinctrl-mt6768.ko mtk-mmc.ko"}
 VENDOR_BOOT_PAGESIZE=${VENDOR_BOOT_PAGESIZE:-4096}
 VENDOR_BOOT_BASE=${VENDOR_BOOT_BASE:-0x40078000}
@@ -110,6 +117,26 @@ case "$FIRE66_BOOT_LAYOUT" in
 	compat|hybrid|vendor_boot|boot_v3_vendor_boot|boot_v4_vendor_boot) ;;
 	*) die "unsupported FIRE66_BOOT_LAYOUT: $FIRE66_BOOT_LAYOUT" ;;
 esac
+if [ -z "$FIRE66_BOOT_CMDLINE_SET" ]; then
+	case "$FIRE66_BOOT_LAYOUT" in
+		boot_v3_vendor_boot|boot_v4_vendor_boot)
+			FIRE66_BOOT_CMDLINE=
+		;;
+		*)
+			FIRE66_BOOT_CMDLINE="bootopt=64S3,32N2,64N2"
+		;;
+	esac
+fi
+if [ -z "$FIRE66_VENDOR_CMDLINE_SET" ]; then
+	case "$FIRE66_BOOT_LAYOUT" in
+		boot_v3_vendor_boot|boot_v4_vendor_boot)
+			FIRE66_VENDOR_CMDLINE="bootopt=64S3,32N2,64N2"
+		;;
+		*)
+			FIRE66_VENDOR_CMDLINE=
+		;;
+	esac
+fi
 if [ -z "$FIRE66_VBMETA_FLAGS" ]; then
 	case "$FIRE66_BOOT_LAYOUT" in
 		boot_v3_vendor_boot|boot_v4_vendor_boot)
@@ -236,6 +263,9 @@ if { [ "$FIRE66_BOOT_LAYOUT" = boot_v3_vendor_boot ] ||
 	[ "$VENDOR_BOOT_PAGESIZE" != 4096 ]; then
 	die "Fire LK v3/v4 vendor_boot parser expects 4096-byte pages; got $VENDOR_BOOT_PAGESIZE"
 fi
+if [ "$FIRE66_ROM_DIST_ONLY" = 1 ] && [ "$SKIP_AK3" != 1 ]; then
+	die "FIRE66_ROM_DIST_ONLY=1 requires SKIP_AK3=1"
+fi
 if [ "$VENDOR_BOOT_MAX_BYTES" -gt "$FIRE66_VENDOR_BOOT_PARTITION_BYTES" ]; then
 	die "VENDOR_BOOT_MAX_BYTES (${VENDOR_BOOT_MAX_BYTES}) exceeds vendor_boot partition size (${FIRE66_VENDOR_BOOT_PARTITION_BYTES})"
 fi
@@ -278,17 +308,19 @@ need_tool gzip
 need_tool cpio
 [ -n "$CPP" ] || die "cpp is required"
 [ -n "$DTC" ] || die "dtc is required"
-[ -n "$MKBOOTIMG" ] || die "mkbootimg is required"
-[ "$FIRE66_BOOT_AVB_FOOTER" != 1 ] || [ -n "$AVBTOOL" ] || die "avbtool is required for Fire boot AVB footer"
-[ "$AK3_FLASH_VBMETA" != 1 ] || [ -n "$AVBTOOL" ] || die "avbtool is required for Fire vbmeta image"
+[ "$FIRE66_ROM_DIST_ONLY" = 1 ] || [ -n "$MKBOOTIMG" ] || die "mkbootimg is required"
+[ "$FIRE66_ROM_DIST_ONLY" = 1 ] || [ "$FIRE66_BOOT_AVB_FOOTER" != 1 ] || [ -n "$AVBTOOL" ] || die "avbtool is required for Fire boot AVB footer"
+[ "$FIRE66_ROM_DIST_ONLY" = 1 ] || [ "$AK3_FLASH_VBMETA" != 1 ] || [ -n "$AVBTOOL" ] || die "avbtool is required for Fire vbmeta image"
 [ "$STRIP_DEBUG_MODULES" != 1 ] || [ -n "$STRIP" ] || die "llvm-strip is required"
 [ -x "$MKDTIMG" ] || die "mkdtimg not found: $MKDTIMG"
-[ -x "$MKBOOTIMG" ] || die "mkbootimg not executable: $MKBOOTIMG"
-[ "$FIRE66_BOOT_AVB_FOOTER" != 1 ] || [ -x "$AVBTOOL" ] || die "avbtool not executable: $AVBTOOL"
-[ "$AK3_FLASH_VBMETA" != 1 ] || [ -x "$AVBTOOL" ] || die "avbtool not executable: $AVBTOOL"
-[ "$FIRE66_BOOT_AVB_FOOTER" != 1 ] || [ -f "$FIRE66_BOOT_AVB_KEY" ] || die "Fire boot AVB key not found: $FIRE66_BOOT_AVB_KEY"
-[ "$FIRE66_GKI_BOOT_SIGNATURE" != 1 ] || [ -f "$FIRE66_GKI_SIGNING_KEY" ] || die "Fire GKI signing key not found: $FIRE66_GKI_SIGNING_KEY"
-[ "$FIRE66_GKI_BOOT_SIGNATURE" != 1 ] || [ -x "$FIRE66_GKI_SIGNING_AVBTOOL" ] || die "Fire GKI signing avbtool not executable: $FIRE66_GKI_SIGNING_AVBTOOL"
+[ "$FIRE66_ROM_DIST_ONLY" = 1 ] || [ -x "$MKBOOTIMG" ] || die "mkbootimg not executable: $MKBOOTIMG"
+[ "$FIRE66_ROM_DIST_ONLY" = 1 ] || [ "$FIRE66_BOOT_AVB_FOOTER" != 1 ] || [ -x "$AVBTOOL" ] || die "avbtool not executable: $AVBTOOL"
+[ "$FIRE66_ROM_DIST_ONLY" = 1 ] || [ "$AK3_FLASH_VBMETA" != 1 ] || [ -x "$AVBTOOL" ] || die "avbtool not executable: $AVBTOOL"
+[ "$FIRE66_ROM_DIST_ONLY" = 1 ] || [ "$FIRE66_BOOT_AVB_FOOTER" != 1 ] || [ -f "$FIRE66_BOOT_AVB_KEY" ] || die "Fire boot AVB key not found: $FIRE66_BOOT_AVB_KEY"
+[ "$FIRE66_ROM_DIST_ONLY" = 1 ] || [ "$FIRE66_GKI_BOOT_SIGNATURE" != 1 ] || [ -f "$FIRE66_GKI_SIGNING_KEY" ] || die "Fire GKI signing key not found: $FIRE66_GKI_SIGNING_KEY"
+[ "$FIRE66_ROM_DIST_ONLY" = 1 ] || [ "$FIRE66_GKI_BOOT_SIGNATURE" != 1 ] || [ -x "$FIRE66_GKI_SIGNING_AVBTOOL" ] || die "Fire GKI signing avbtool not executable: $FIRE66_GKI_SIGNING_AVBTOOL"
+[ -z "$FIRE66_VENDOR_BOOT_FSTAB" ] || [ -f "$FIRE66_VENDOR_BOOT_FSTAB" ] || die "Fire vendor_boot fstab not found: $FIRE66_VENDOR_BOOT_FSTAB"
+[ -z "$FIRST_STAGE_VENDOR_BOOT_MODULES_FILE" ] || [ -f "$FIRST_STAGE_VENDOR_BOOT_MODULES_FILE" ] || die "first-stage vendor_boot module list not found: $FIRST_STAGE_VENDOR_BOOT_MODULES_FILE"
 if [ "$AK3_FLASH_VBMETA" = 1 ] && [ "$FIRE66_VBMETA_ALGORITHM" != NONE ]; then
 	[ -f "$FIRE66_VBMETA_KEY" ] || die "Fire vbmeta key not found: $FIRE66_VBMETA_KEY"
 fi
@@ -300,7 +332,7 @@ fi
 	die "unpack_bootimg not executable: $UNPACK_BOOTIMG"
 case "$FIRE66_BOOT_LAYOUT" in
 	boot_v3_vendor_boot|boot_v4_vendor_boot)
-		if [ -z "$FIRE66_BASE_BOOT_IMG" ]; then
+		if [ "$FIRE66_ROM_DIST_ONLY" != 1 ] && [ -z "$FIRE66_BASE_BOOT_IMG" ]; then
 			FIRE66_BASE_BOOT_IMG=$(
 				first_file \
 					/home/deb/crdroid_fire_payload_20260630/boot.img \
@@ -313,7 +345,7 @@ case "$FIRE66_BOOT_LAYOUT" in
 esac
 case "$FIRE66_BOOT_LAYOUT" in
 	boot_v3_vendor_boot|boot_v4_vendor_boot)
-		[ -f "$FIRE66_BASE_BOOT_IMG" ] ||
+		[ "$FIRE66_ROM_DIST_ONLY" = 1 ] || [ -f "$FIRE66_BASE_BOOT_IMG" ] ||
 			die "FIRE66_BASE_BOOT_IMG is required for $FIRE66_BOOT_LAYOUT layout"
 	;;
 esac
@@ -525,7 +557,7 @@ esac
 if [ -n "$FIRE66_KERNEL_TEXT_OFFSET" ]; then
 	patch_fire_kernel_text_offset "$BOOT_IMAGE_STAGE" "$FIRE66_KERNEL_TEXT_OFFSET"
 fi
-validate_fire_kernel_header "$BOOT_IMAGE_STAGE" "$FIRE66_KERNEL_TEXT_OFFSET"
+validate_fire_kernel_header "$BOOT_IMAGE_STAGE" "$FIRE66_EXPECT_KERNEL_TEXT_OFFSET"
 
 echo "==> Building Fire dtb/dtbo"
 dt_include_args=(
@@ -1421,13 +1453,23 @@ generate_module_metadata() {
 	: > "${MOD_DST}/modules.symbols.bin"
 }
 
+read_first_stage_vendor_boot_modules() {
+	if [ -n "$FIRST_STAGE_VENDOR_BOOT_MODULES_FILE" ]; then
+		sed -e 's/#.*//' -e '/^[[:space:]]*$/d' \
+			"$FIRST_STAGE_VENDOR_BOOT_MODULES_FILE"
+	else
+		printf '%s\n' "$FIRST_STAGE_VENDOR_BOOT_MODULES"
+	fi
+}
+
 strip_module_debug_symbols
 generate_module_metadata
 
 build_first_stage_vendor_ramdisk() {
 	local vendor_ramdisk_dir="${WORK_DIR}/vendor_ramdisk"
+	local first_stage_dir="${vendor_ramdisk_dir}/first_stage_ramdisk"
 	local vendor_module_dir="${vendor_ramdisk_dir}/lib/modules"
-	local base dep deps line name
+	local base dep deps line name first_stage_modules
 	local -A selected=()
 	local -a selected_order=()
 
@@ -1454,8 +1496,13 @@ build_first_stage_vendor_ramdisk() {
 	echo "==> Building first-stage vendor ramdisk"
 	rm -rf "$vendor_ramdisk_dir"
 	mkdir -p "$vendor_module_dir"
+	if [ -n "$FIRE66_VENDOR_BOOT_FSTAB" ]; then
+		mkdir -p "$first_stage_dir"
+		cp -f "$FIRE66_VENDOR_BOOT_FSTAB" "${first_stage_dir}/${FIRE66_VENDOR_BOOT_FSTAB_NAME}"
+	fi
 
-	for base in $FIRST_STAGE_VENDOR_BOOT_MODULES; do
+	first_stage_modules=$(read_first_stage_vendor_boot_modules)
+	for base in $first_stage_modules; do
 		add_first_stage_module "$base"
 	done
 
@@ -1502,14 +1549,30 @@ build_first_stage_vendor_ramdisk() {
 	echo "First-stage vendor_boot modules: ${#selected_order[@]}"
 }
 
-build_first_stage_vendor_ramdisk
-build_vendor_boot "${DT_OUT}/vendor-ramdisk.cpio.gz"
-case "$FIRE66_BOOT_LAYOUT" in
-	boot_v3_vendor_boot|boot_v4_vendor_boot)
-		build_fire_boot_v3_v4 "${DT_OUT}/vendor-ramdisk.cpio.gz"
-		build_fire_vbmeta
-	;;
-esac
+validate_first_stage_vendor_boot_module_list() {
+	local base count=0
+
+	for base in $(read_first_stage_vendor_boot_modules); do
+		[ -f "${MOD_DST}/${base}" ] ||
+			die "first-stage vendor_boot module is missing: ${base}"
+		count=$((count + 1))
+	done
+
+	echo "First-stage vendor_boot module list: ${count}"
+}
+
+if [ "$FIRE66_ROM_DIST_ONLY" = 1 ]; then
+	validate_first_stage_vendor_boot_module_list
+else
+	build_first_stage_vendor_ramdisk
+	build_vendor_boot "${DT_OUT}/vendor-ramdisk.cpio.gz"
+	case "$FIRE66_BOOT_LAYOUT" in
+		boot_v3_vendor_boot|boot_v4_vendor_boot)
+			build_fire_boot_v3_v4 "${DT_OUT}/vendor-ramdisk.cpio.gz"
+			build_fire_vbmeta
+		;;
+	esac
+fi
 if [ "$SKIP_AK3" != 1 ] && [ "$AK3_FLASH_VENDOR_BOOT" = 1 ]; then
 	cp -f "${DT_OUT}/vendor_boot.img" "${STAGE}/vendor_boot.img"
 fi
@@ -1538,8 +1601,9 @@ case "$(basename "$IMAGE")" in
 	;;
 esac
 cp -f "${DT_OUT}/mt6768.dtb" "${ROM_ARTIFACTS_DIR}/dtb"
+cp -f "${DT_OUT}/mt6768.dtb" "${ROM_ARTIFACTS_DIR}/mt6768.dtb"
 cp -f "${DT_OUT}/dtbo.img" "${ROM_ARTIFACTS_DIR}/dtbo.img"
-cp -f "${DT_OUT}/vendor_boot.img" "${ROM_ARTIFACTS_DIR}/vendor_boot.img"
+[ ! -f "${DT_OUT}/vendor_boot.img" ] || cp -f "${DT_OUT}/vendor_boot.img" "${ROM_ARTIFACTS_DIR}/vendor_boot.img"
 [ ! -f "${DT_OUT}/vbmeta.img" ] || cp -f "${DT_OUT}/vbmeta.img" "${ROM_ARTIFACTS_DIR}/vbmeta.img"
 [ ! -f "${DT_OUT}/fire66.bootconfig" ] || \
 	cp -f "${DT_OUT}/fire66.bootconfig" "${ROM_ARTIFACTS_DIR}/vendor_boot.bootconfig"
