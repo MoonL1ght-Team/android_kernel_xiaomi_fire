@@ -142,7 +142,7 @@ fi
 if [ -z "$FIRE66_VENDOR_CMDLINE_SET" ]; then
 	case "$FIRE66_BOOT_LAYOUT" in
 		boot_v3_vendor_boot|boot_v4_vendor_boot)
-			FIRE66_VENDOR_CMDLINE="bootopt=64S3,32N2,64N2"
+			FIRE66_VENDOR_CMDLINE="bootopt=64S3,32N2,64N2 kvm-arm.mode=none"
 		;;
 		*)
 			FIRE66_VENDOR_CMDLINE=

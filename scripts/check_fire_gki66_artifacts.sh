@@ -22,6 +22,7 @@ VENDOR_BOOT_IMG=${VENDOR_BOOT_IMG:-${ARTIFACT_DIR}/vendor_boot.img}
 VBMETA_IMG=${VBMETA_IMG:-${ARTIFACT_DIR}/vbmeta.img}
 DTB_IMG=${DTB_IMG:-${ARTIFACT_DIR}/mt6768.dtb}
 FIRE66_VENDOR_BOOT_MODULES_FILE=${FIRE66_VENDOR_BOOT_MODULES_FILE:-}
+FIRE66_EXPECT_VENDOR_CMDLINE_TOKEN=${FIRE66_EXPECT_VENDOR_CMDLINE_TOKEN:-kvm-arm.mode=none}
 FIRE66_EXPECT_TEXT_OFFSET=${FIRE66_EXPECT_TEXT_OFFSET:-0x80000}
 FIRE66_BOOT_PARTITION_BYTES=${FIRE66_BOOT_PARTITION_BYTES:-134217728}
 FIRE66_VENDOR_BOOT_PARTITION_BYTES=${FIRE66_VENDOR_BOOT_PARTITION_BYTES:-8388608}
@@ -112,13 +113,14 @@ check_vendor_boot() {
 	local ramdisk_dir="${tmp}/vendor_ramdisk"
 
 	echo "==> Checking vendor_boot.img"
-	python3 - "$vendor_boot" "$FIRE66_VENDOR_BOOT_PARTITION_BYTES" <<'PY'
+	python3 - "$vendor_boot" "$FIRE66_VENDOR_BOOT_PARTITION_BYTES" "$FIRE66_EXPECT_VENDOR_CMDLINE_TOKEN" <<'PY'
 import pathlib
 import struct
 import sys
 
 vendor_boot = pathlib.Path(sys.argv[1])
 partition_size = int(sys.argv[2], 0)
+expected_cmdline_token = sys.argv[3]
 data = vendor_boot.read_bytes()
 
 if data[:8] != b"VNDRBOOT":
@@ -131,15 +133,21 @@ header_version = struct.unpack_from("<I", data, 8)[0]
 page_size = struct.unpack_from("<I", data, 12)[0]
 kernel_addr = struct.unpack_from("<I", data, 16)[0]
 ramdisk_addr = struct.unpack_from("<I", data, 20)[0]
+cmdline = data[28:28 + 2048].split(b"\0", 1)[0].decode("ascii", "replace")
 if header_version != 4:
     raise SystemExit(f"{vendor_boot}: expected vendor_boot header v4, got v{header_version}")
 if page_size != 4096:
     raise SystemExit(f"{vendor_boot}: expected page size 4096, got {page_size}")
+if expected_cmdline_token and expected_cmdline_token not in cmdline.split():
+    raise SystemExit(
+        f"{vendor_boot}: vendor cmdline missing {expected_cmdline_token!r}: {cmdline!r}"
+    )
 
 print(f"vendor_boot header: v{header_version}")
 print(f"vendor_boot size  : {len(data)}")
 print(f"kernel_addr       : 0x{kernel_addr:08x}")
 print(f"ramdisk_addr      : 0x{ramdisk_addr:08x}")
+print(f"vendor cmdline    : {cmdline}")
 PY
 
 	mkdir -p "$out_dir" "$ramdisk_dir"
