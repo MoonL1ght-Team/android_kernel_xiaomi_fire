@@ -14,6 +14,14 @@ config MTK_PRINTK_UART_CONSOLE
 	  uart console do not output printk log.
 	  also RD can set the setting by command.
 
+config MTK_PRINTK_FORCE_UART_CONSOLE
+	bool "Force MTK printk UART console enabled"
+	depends on MTK_PRINTK_UART_CONSOLE
+	help
+	  Force the MTK printk UART controller to keep the UART console
+	  enabled, even if the bootloader appends disable_uart=1. This is
+	  intended for early boot diagnostics.
+
 config LOG_TOO_MUCH_WARNING
 	bool "printk too much warning"
 	help

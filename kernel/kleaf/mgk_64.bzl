@@ -4003,6 +4003,16 @@ def get_overlay_modules_list():
 
         mgk_64_device_modules.append("drivers/misc/mediatek/pmic_tia/pmic_tia.ko")
 
+    if "fire_debug_minimal.config" in DEFCONFIG_OVERLAYS:
+        for module in [
+            "drivers/misc/mediatek/pkvm_mgmt/pkvm_mgmt.ko",
+            "drivers/misc/mediatek/pkvm_mkp/pkvm_mkp.ko",
+            "drivers/misc/mediatek/pkvm_smmu/pkvm_smmu.ko",
+            "drivers/misc/mediatek/pkvm_tmem/pkvm_tmem.ko",
+        ]:
+            if module in mgk_64_device_modules:
+                mgk_64_device_modules.remove(module)
+
     if "isee400_overlay.config" in DEFCONFIG_OVERLAYS:
         mgk_64_device_modules.remove("drivers/tee/teei/515/isee.ko")
         mgk_64_device_modules.append("drivers/tee/teei/400/isee.ko")

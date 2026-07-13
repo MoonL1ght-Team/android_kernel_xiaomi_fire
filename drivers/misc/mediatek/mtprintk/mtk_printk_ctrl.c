@@ -40,6 +40,9 @@ module_param_named(disable_uart, printk_ctrl_disable, int, 0644);
 
 bool mt_get_uartlog_status(void)
 {
+	if (IS_ENABLED(CONFIG_MTK_PRINTK_FORCE_UART_CONSOLE))
+		return true;
+
 	if (printk_ctrl_disable == 1)
 		return false;
 	else if ((printk_ctrl_disable == 0) || (printk_ctrl_disable == 2))
@@ -54,6 +57,12 @@ void update_uartlog_status(bool new_value, int value)
 	struct console *bcon = NULL;
 	struct console *bcon_ttys = NULL;
 	u64 max_seq = 0;
+
+	if (IS_ENABLED(CONFIG_MTK_PRINTK_FORCE_UART_CONSOLE)) {
+		printk_ctrl_disable = 2;
+		new_value = false;
+		value = 1;
+	}
 
 	if (new_value == false || printk_ctrl_disable == 2) {
 		pr_info("use default valut %d to set uart status.\n",
@@ -431,6 +440,11 @@ static int __init mt_printk_ctrl_init(void)
 	entry = proc_create("mtprintk", 0664, NULL, &mt_printk_ctrl_fops);
 	if (!entry)
 		return -ENOMEM;
+
+#if IS_ENABLED(CONFIG_MTK_PRINTK_FORCE_UART_CONSOLE)
+	printk_ctrl_disable = 2;
+	update_uartlog_status(false, 0);
+#endif
 
 #if IS_ENABLED(CONFIG_LOG_TOO_MUCH_WARNING)
 	logmuch_entry = proc_create("log_much", 0440, NULL, &log_much_ops);
