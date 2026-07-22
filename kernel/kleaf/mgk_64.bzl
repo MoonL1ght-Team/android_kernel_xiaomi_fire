@@ -463,7 +463,7 @@ mgk_64_device_modules = [
     "drivers/misc/mediatek/pcie/mtk_pcie_smt.ko",
     "drivers/misc/mediatek/cg_ppt/mtk_cg_peak_power_throttling.ko",
     "drivers/misc/mediatek/perf_common/mtk_perf_common.ko",
-    "drivers/misc/mediatek/performance/fpsgo_v3/mtk_fpsgo.ko",
+    "drivers/misc/mediatek/performance/fpsgo_v3/fpsgo.ko",
     "drivers/misc/mediatek/performance/frs/frs.ko",
     "drivers/misc/mediatek/performance/load_track/load_track.ko",
     "drivers/misc/mediatek/performance/mtk_ioctl_touch_boost.ko",
@@ -1126,7 +1126,7 @@ def get_overlay_modules_list():
         mgk_64_kleaf_modules.remove("//vendor/mediatek/kernel_modules/msync2_frd_int:msync2_frd_int")
         mgk_64_kleaf_eng_modules.remove("//vendor/mediatek/tests/kernel/ktf_testcase:ktf_testcase")
         mgk_64_kleaf_userdebug_modules.remove("//vendor/mediatek/tests/kernel/ktf_testcase:ktf_testcase")
-        mgk_64_device_modules.remove("drivers/misc/mediatek/performance/fpsgo_v3/mtk_fpsgo.ko")
+        mgk_64_device_modules.remove("drivers/misc/mediatek/performance/fpsgo_v3/fpsgo.ko")
         mgk_64_device_modules.remove("drivers/misc/mediatek/performance/frs/frs.ko")
 
         mgk_64_kleaf_modules.append("//vendor/mediatek/kernel_modules/met_drv_secure_v3:met_drv_secure_v3_default")
@@ -1715,6 +1715,22 @@ def get_overlay_modules_list():
     if "mt6768_overlay.config" in DEFCONFIG_OVERLAYS:
         mgk_64_kleaf_modules.append("//vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m/build/connac1x/6768:wlan_drv_gen4m_6768")
         for module in [
+            "//vendor/mediatek/kernel_modules/connectivity/wlan/adaptor/build/connac2x:wmt_chrdev_wifi_connac2",
+            "//vendor/mediatek/kernel_modules/connectivity/wlan/adaptor/build/connac3x:wmt_chrdev_wifi_connac3",
+            "//vendor/mediatek/kernel_modules/connectivity/wlan/adaptor/wlan_page_pool:wlan_page_pool",
+            "//vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m/build/connac2x/6897:wlan_drv_gen4m_6897",
+            "//vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m/build/connac2x/6899:wlan_drv_gen4m_6899",
+            "//vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m/build/connac3x/6985_6639:wlan_drv_gen4m_6985_6639",
+            "//vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m/build/connac3x/6989_6639:wlan_drv_gen4m_6989_6639",
+            "//vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m/build/connac3x/6989_6639_dppm:wlan_drv_gen4m_6989_6639_dppm",
+            "//vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m/build/connac3x/6991_6653:wlan_drv_gen4m_6991_6653",
+            "//vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m/build/connac3x/6991_6653_2g2a:wlan_drv_gen4m_6991_6653_2g2a",
+            "//vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m/build/connac3x/6991_6653_triband:wlan_drv_gen4m_6991_6653_triband",
+            "//vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m/build/connac3x/eap_6653:wlan_drv_gen4m_eap_6653",
+        ]:
+            if module in mgk_64_kleaf_modules:
+                mgk_64_kleaf_modules.remove(module)
+        for module in [
             "//vendor/mediatek/kernel_modules/connectivity/gps/data_link/plat/v010:gps_drv_dl_v010",
             "//vendor/mediatek/kernel_modules/connectivity/gps/data_link/plat/v030:gps_drv_dl_v030",
             "//vendor/mediatek/kernel_modules/connectivity/gps/data_link/plat/v050:gps_drv_dl_v050",
@@ -2236,10 +2252,23 @@ def get_overlay_modules_list():
         for module in [
             "//vendor/mediatek/kernel_modules/afs_common_utils:jank_detection_common_utils",
             "//vendor/mediatek/kernel_modules/met_drv_secure_v3:met_drv_secure_v3",
-            "//vendor/mediatek/kernel_modules/met_drv_v3:met_drv_v3",
         ]:
             if module in mgk_64_kleaf_modules:
                 mgk_64_kleaf_modules.remove(module)
+        for module in [
+            "//vendor/mediatek/kernel_modules/met_drv_v3:met_drv_v3",
+            "//vendor/mediatek/kernel_modules/met_drv_v3/met_api/met_backlight_api:met_backlight_api_cus",
+            "//vendor/mediatek/kernel_modules/met_drv_v3/met_api/met_emi_api:met_emi_api_cus",
+            "//vendor/mediatek/kernel_modules/met_drv_v3/met_api/met_gpu_adv_api:met_gpu_adv_api_cus",
+            "//vendor/mediatek/kernel_modules/met_drv_v3/met_api/met_gpu_api:met_gpu_api_cus",
+            "//vendor/mediatek/kernel_modules/met_drv_v3/met_api/met_ipi_api:met_ipi_api_cus",
+            "//vendor/mediatek/kernel_modules/met_drv_v3/met_api/met_mcupm_api:met_mcupm_api_cus",
+            "//vendor/mediatek/kernel_modules/met_drv_v3/met_api/met_scmi_api:met_scmi_api_cus",
+            "//vendor/mediatek/kernel_modules/met_drv_v3/met_api/met_sspm_api:met_sspm_api_cus",
+            "//vendor/mediatek/kernel_modules/met_drv_v3/met_api/met_vcore_api:met_vcore_api_cus",
+        ]:
+            if module not in mgk_64_kleaf_modules:
+                mgk_64_kleaf_modules.append(module)
         for module in [
             "drivers/gpu/drm/mediatek/mediatek_v2/mediatek-drm.ko",
             "drivers/gpu/drm/mediatek/mediatek_v2/mtk_disp_notify.ko",
@@ -2266,6 +2295,15 @@ def get_overlay_modules_list():
         ]:
             if module not in mgk_64_device_modules:
                 mgk_64_device_modules.append(module)
+        for module in [
+            "drivers/misc/mediatek/mcupm/v2/mcupm.ko",
+            "drivers/misc/mediatek/sspm/v3/sspm_v3.ko",
+            "drivers/misc/mediatek/tinysys_scmi/tinysys-scmi.ko",
+        ]:
+            if module in mgk_64_device_modules:
+                mgk_64_device_modules.remove(module)
+        if "drivers/misc/mediatek/sspm/v1/sspm_v1.ko" not in mgk_64_device_modules:
+            mgk_64_device_modules.append("drivers/misc/mediatek/sspm/v1/sspm_v1.ko")
         mgk_64_device_modules.append("oem/devinfo/oem_devinfo.ko")
         mgk_64_device_modules.append("oem/fingerprint/fpc1560/fpc_fingerprint.ko")
         mgk_64_device_modules.append("oem/fingerprint/goodix/gf_tee.ko")
@@ -4002,16 +4040,6 @@ def get_overlay_modules_list():
             mgk_64_device_modules.remove("drivers/thermal/mediatek/md_cooling_all.ko")
 
         mgk_64_device_modules.append("drivers/misc/mediatek/pmic_tia/pmic_tia.ko")
-
-    if "fire_debug_minimal.config" in DEFCONFIG_OVERLAYS:
-        for module in [
-            "drivers/misc/mediatek/pkvm_mgmt/pkvm_mgmt.ko",
-            "drivers/misc/mediatek/pkvm_mkp/pkvm_mkp.ko",
-            "drivers/misc/mediatek/pkvm_smmu/pkvm_smmu.ko",
-            "drivers/misc/mediatek/pkvm_tmem/pkvm_tmem.ko",
-        ]:
-            if module in mgk_64_device_modules:
-                mgk_64_device_modules.remove(module)
 
     if "isee400_overlay.config" in DEFCONFIG_OVERLAYS:
         mgk_64_device_modules.remove("drivers/tee/teei/515/isee.ko")

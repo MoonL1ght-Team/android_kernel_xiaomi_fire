@@ -13,11 +13,19 @@ obj-$(CONFIG_MTK_DVFSRC) += mtk-dvfsrc.o mtk-dvfsrc-start.o
 obj-$(CONFIG_MTK_IPI) += mtk_tinysys_ipi.o
 obj-$(CONFIG_MTK_MBOX) += mtk-mbox.o
 obj-$(CONFIG_DEVICE_MODULES_MTK_PMIC_WRAP) += mtk-pmic-wrap.o
-obj-$(CONFIG_DEVICE_MODULES_MTK_SCPSYS) += mtk-scpsys.o mtk-pm-domain-disable-unused.o
+obj-$(CONFIG_DEVICE_MODULES_MTK_SCPSYS) += mtk-scpsys.o
+ifeq ($(filter y m,$(CONFIG_MTK_PLAT_POWER_MT6768)),)
+obj-$(CONFIG_DEVICE_MODULES_MTK_SCPSYS) += mtk-pm-domain-disable-unused.o
 ifneq ($(filter m,$(CONFIG_DEVICE_MODULES_MTK_SCPSYS)),)
 obj-$(CONFIG_DEVICE_MODULES_MTK_SCPSYS) += scpsys-dummy.o
 scpsys-dummy-$(CONFIG_DEVICE_MODULES_MTK_SCPSYS) += mtk-scpsys-dummy.o
 endif
+endif
+ifneq ($(filter y m,$(CONFIG_MTK_PLAT_POWER_MT6768)),)
+ifneq ($(wildcard $(srctree)/$(src)/mtk-scpsys-mt6768.c),)
+obj-$(CONFIG_DEVICE_MODULES_MTK_SCPSYS) += mtk-scpsys-mt6768.o mtk-scpsys-bringup.o
+endif
+else
 ifneq ($(wildcard $(srctree)/$(src)/mtk-scpsys-mt6768.c),)
 obj-$(CONFIG_DEVICE_MODULES_MTK_SCPSYS) += mtk-scpsys-mt6768.o mtk-scpsys-bringup.o
 endif
@@ -65,6 +73,7 @@ obj-$(CONFIG_DEVICE_MODULES_MTK_SCPSYS) += mtk-scpsys-mt6991-spm.o
 endif
 ifneq ($(wildcard $(srctree)/$(src)/mtk-scpsys-mt6991-mmpc.c),)
 obj-$(CONFIG_DEVICE_MODULES_MTK_SCPSYS) += mtk-scpsys-mt6991-mmpc.o
+endif
 endif
 ifneq ($(wildcard $(srctree)/$(src)/mtk-scpsys-mt6991-ivi.c),)
 obj-$(CONFIG_DEVICE_MODULES_MTK_SCPSYS_IVI) += mtk-scpsys-mt6991-ivi.o

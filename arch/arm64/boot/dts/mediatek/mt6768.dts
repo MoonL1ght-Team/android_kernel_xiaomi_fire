@@ -57,7 +57,6 @@ aliases {
 		mtksmmu0 = &iommu;
 		mmc0 = &mmc0;
 		mmc1 = &mmc1;
-		serial0 = &apuart0;
 	};
 
 	soc {
@@ -520,7 +519,6 @@ aliases {
 	/* chosen */
 	chosen: chosen {
 		bootargs = "root=/dev/ram firmware_class.path=/vendor/firmware";
-		stdout-path = "serial0:921600n8";
 		kaslr-seed = <0 0>;
 	};
 

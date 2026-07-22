@@ -20,17 +20,9 @@ filegroup(
 )
 
 define_mgk_ko(
-    name = "emi-mpu",
-    outs = [
-        "emi_legacy/emi-dummy.ko",
-        "emi_legacy/emi_legacy_v1/emicen.ko",
-        "emi_legacy/emi_legacy_v1/emictrl.ko",
-        "emi_legacy/emi_legacy_v1/emiisu.ko",
-        "emi_legacy/emi_legacy_v1/emimpu.ko",
-        "mtk_dramc.ko",
-    ],
+    name = "mtk-dvfsrc-helper",
 )
 
 define_mgk_ko(
-    name = "mtk_dramc",
+    name = "dvfsrc-opp-mt6768",
 )

@@ -62,6 +62,5 @@ MTK_FPSGO_FSTB = $(mtk_fpsgo_fstb_objs:%.o=fstb/%.o)
 
 MTK_FPSGO_SRC = $(MTK_FPSGO_MAIN) $(MTK_FPSGO_BASE) $(MTK_FPSGO_COMPOSER) $(MTK_FPSGO_FBT) $(MTK_FPSGO_FSTB)
 
-obj-$(CONFIG_MTK_FPSGO_V3) += mtk_fpsgo.o
-mtk_fpsgo-objs += $(MTK_FPSGO_SRC)
-
+obj-$(CONFIG_MTK_FPSGO_V3) += fpsgo.o
+fpsgo-objs += $(MTK_FPSGO_SRC)

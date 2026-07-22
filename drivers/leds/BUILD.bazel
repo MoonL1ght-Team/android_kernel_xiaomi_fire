@@ -16,21 +16,22 @@ filegroup(
         "**",
     ], exclude = [
         "BUILD.bazel",
+        "flash/BUILD.bazel",
     ]),
 )
 
 define_mgk_ko(
-    name = "emi-mpu",
-    outs = [
-        "emi_legacy/emi-dummy.ko",
-        "emi_legacy/emi_legacy_v1/emicen.ko",
-        "emi_legacy/emi_legacy_v1/emictrl.ko",
-        "emi_legacy/emi_legacy_v1/emiisu.ko",
-        "emi_legacy/emi_legacy_v1/emimpu.ko",
-        "mtk_dramc.ko",
-    ],
+    name = "leds-mtk",
 )
 
 define_mgk_ko(
-    name = "mtk_dramc",
+    name = "leds-mtk-pwm",
+)
+
+define_mgk_ko(
+    name = "leds-mtk-disp",
+)
+
+define_mgk_ko(
+    name = "regulator-vibrator",
 )

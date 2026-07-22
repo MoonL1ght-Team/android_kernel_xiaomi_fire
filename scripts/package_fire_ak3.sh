@@ -45,7 +45,7 @@ CPP=${CPP:-$(command -v cpp || true)}
 DTC=${DTC:-$(command -v dtc || true)}
 FDTOVERLAY=${FDTOVERLAY:-$(command -v fdtoverlay || true)}
 STRIP=${STRIP:-$(command -v llvm-strip || true)}
-FIRE66_BOOT_LAYOUT=${FIRE66_BOOT_LAYOUT:-hybrid}
+FIRE66_BOOT_LAYOUT=${FIRE66_BOOT_LAYOUT:-boot_v3_vendor_boot}
 FIRE66_KERNEL_COMPRESSION=${FIRE66_KERNEL_COMPRESSION:-gzip}
 FIRE66_BOOT_CMDLINE_SET=${FIRE66_BOOT_CMDLINE+x}
 FIRE66_VENDOR_CMDLINE_SET=${FIRE66_VENDOR_CMDLINE+x}
@@ -60,9 +60,6 @@ FIRE66_BOOT_OS_PATCH_LEVEL=${FIRE66_BOOT_OS_PATCH_LEVEL:-2026-06}
 FIRE66_BOOT_MAX_BYTES=${FIRE66_BOOT_MAX_BYTES:-134217728}
 FIRE66_BOOT_PARTITION_BYTES=${FIRE66_BOOT_PARTITION_BYTES:-${FIRE66_BOOT_MAX_BYTES}}
 FIRE66_VENDOR_BOOT_PARTITION_BYTES=${FIRE66_VENDOR_BOOT_PARTITION_BYTES:-}
-FIRE66_LK_AVB_HEAP_BYTES=${FIRE66_LK_AVB_HEAP_BYTES:-0x8c00000}
-FIRE66_LK_AVB_HEAP_RESERVE_BYTES=${FIRE66_LK_AVB_HEAP_RESERVE_BYTES:-0x400000}
-FIRE66_ALLOW_AVB_HEAP_OVERSUBSCRIBE=${FIRE66_ALLOW_AVB_HEAP_OVERSUBSCRIBE:-0}
 FIRE66_BOOT_AVB_KEY=${FIRE66_BOOT_AVB_KEY:-${KERNEL_ROOT}/prebuilts/kernel-build-tools/linux-x86/share/avb/testkey_rsa2048.pem}
 FIRE66_BOOT_AVB_ALGORITHM=${FIRE66_BOOT_AVB_ALGORITHM:-SHA256_RSA2048}
 FIRE66_BOOT_AVB_ROLLBACK_INDEX=${FIRE66_BOOT_AVB_ROLLBACK_INDEX:-1}
@@ -75,7 +72,7 @@ FIRE66_BOOT_AVB_RELOCATE_TO_BASE=${FIRE66_BOOT_AVB_RELOCATE_TO_BASE:-1}
 FIRE66_BOOT_AVB_PAD_HASH_TO_BASE=${FIRE66_BOOT_AVB_PAD_HASH_TO_BASE:-}
 FIRE66_ALLOW_RAW_BOOT=${FIRE66_ALLOW_RAW_BOOT:-0}
 FIRE66_KERNEL_TEXT_OFFSET=${FIRE66_KERNEL_TEXT_OFFSET:-}
-FIRE66_EXPECT_KERNEL_TEXT_OFFSET=${FIRE66_EXPECT_KERNEL_TEXT_OFFSET:-${FIRE66_KERNEL_TEXT_OFFSET}}
+FIRE66_EXPECT_KERNEL_TEXT_OFFSET=${FIRE66_EXPECT_KERNEL_TEXT_OFFSET:-0x0}
 FIRE66_GKI_BOOT_SIGNATURE=${FIRE66_GKI_BOOT_SIGNATURE:-}
 FIRE66_GKI_SIGNING_KEY=${FIRE66_GKI_SIGNING_KEY:-${FIRE66_BOOT_AVB_KEY}}
 FIRE66_GKI_SIGNING_ALGORITHM=${FIRE66_GKI_SIGNING_ALGORITHM:-${FIRE66_BOOT_AVB_ALGORITHM}}
@@ -87,12 +84,13 @@ FIRE66_VBMETA_ROLLBACK_INDEX=${FIRE66_VBMETA_ROLLBACK_INDEX:-0}
 FIRE66_VBMETA_ROLLBACK_INDEX_LOCATION=${FIRE66_VBMETA_ROLLBACK_INDEX_LOCATION:-0}
 FIRE66_VBMETA_FLAGS=${FIRE66_VBMETA_FLAGS:-}
 FIRE66_VBMETA_PADDING_SIZE=${FIRE66_VBMETA_PADDING_SIZE:-4096}
-FIRE66_VBMETA_BOOT_ROLLBACK_INDEX_LOCATION=${FIRE66_VBMETA_BOOT_ROLLBACK_INDEX_LOCATION:-1}
+FIRE66_VBMETA_BOOT_ROLLBACK_INDEX_LOCATION=${FIRE66_VBMETA_BOOT_ROLLBACK_INDEX_LOCATION:-3}
 FIRE66_VBMETA_SYSTEM_ROLLBACK_INDEX_LOCATION=${FIRE66_VBMETA_SYSTEM_ROLLBACK_INDEX_LOCATION:-2}
-FIRE66_VBMETA_VENDOR_ROLLBACK_INDEX_LOCATION=${FIRE66_VBMETA_VENDOR_ROLLBACK_INDEX_LOCATION:-3}
+FIRE66_VBMETA_VENDOR_ROLLBACK_INDEX_LOCATION=${FIRE66_VBMETA_VENDOR_ROLLBACK_INDEX_LOCATION:-4}
 FIRE66_VBMETA_SYSTEM_KEY=${FIRE66_VBMETA_SYSTEM_KEY:-${FIRE66_VBMETA_KEY}}
 FIRE66_VBMETA_VENDOR_KEY=${FIRE66_VBMETA_VENDOR_KEY:-${FIRE66_VBMETA_KEY}}
 FIRE66_VBMETA_DTBO_FINGERPRINT=${FIRE66_VBMETA_DTBO_FINGERPRINT:-${FIRE66_BOOT_AVB_FINGERPRINT}}
+FIRE66_VBMETA_DTBO_DESCRIPTOR=${FIRE66_VBMETA_DTBO_DESCRIPTOR:-0}
 FIRE66_DTBO_PARTITION_BYTES=${FIRE66_DTBO_PARTITION_BYTES:-8388608}
 AK3_FLASH_DTBO=${AK3_FLASH_DTBO:-1}
 AK3_FLASH_VENDOR_BOOT=${AK3_FLASH_VENDOR_BOOT:-}
@@ -104,6 +102,7 @@ SKIP_AK3=${SKIP_AK3:-0}
 FIRE66_ROM_DIST_ONLY=${FIRE66_ROM_DIST_ONLY:-0}
 STRIP_DEBUG_MODULES=${STRIP_DEBUG_MODULES:-1}
 FIRST_STAGE_VENDOR_BOOT_MODULES_FILE=${FIRST_STAGE_VENDOR_BOOT_MODULES_FILE:-}
+FIRST_STAGE_VENDOR_BOOT_RECOVERY_MODULES_FILE=${FIRST_STAGE_VENDOR_BOOT_RECOVERY_MODULES_FILE:-}
 FIRST_STAGE_VENDOR_BOOT_MODULES=${FIRST_STAGE_VENDOR_BOOT_MODULES:-"mtk-pmic-wrap.ko mt6358-regulator.ko clk-mt6768.ko clk-mt6768-pg.ko pinctrl-mt6768.ko mtk-mmc.ko"}
 VENDOR_BOOT_PAGESIZE=${VENDOR_BOOT_PAGESIZE:-4096}
 VENDOR_BOOT_BASE=${VENDOR_BOOT_BASE:-0x40078000}
@@ -115,7 +114,7 @@ VENDOR_BOOT_DTB_OFFSET=${VENDOR_BOOT_DTB_OFFSET:-0x0bc08000}
 if [ -z "$FIRE66_VENDOR_BOOT_PARTITION_BYTES" ]; then
 	case "$FIRE66_BOOT_LAYOUT" in
 		boot_v3_vendor_boot|boot_v4_vendor_boot)
-			FIRE66_VENDOR_BOOT_PARTITION_BYTES=8388608
+			FIRE66_VENDOR_BOOT_PARTITION_BYTES=67108864
 		;;
 		*)
 			FIRE66_VENDOR_BOOT_PARTITION_BYTES=67108864
@@ -172,10 +171,8 @@ fi
 if [ -z "${FIRE66_VBMETA_BOOT_DESCRIPTOR+x}" ]; then
 	case "$FIRE66_BOOT_LAYOUT" in
 		boot_v3_vendor_boot|boot_v4_vendor_boot)
-			# Stock Fire LK runs AVB in unlocked/orange mode and tries to load
-			# a top-level boot hash descriptor as the full 128 MiB partition.
-			# Keep boot chained for diagnostics; the heap budget check below
-			# still requires a smaller vendor_boot partition or a larger LK heap.
+			# Match the HOS2 AVB topology: boot is chained from top-level
+			# vbmeta, while vendor_boot/dtbo stay as hash descriptors there.
 			FIRE66_VBMETA_BOOT_DESCRIPTOR=chain
 		;;
 		*)
@@ -190,7 +187,7 @@ esac
 if [ -z "${FIRE66_BOOTCONFIG+x}" ]; then
 	case "$FIRE66_BOOT_LAYOUT" in
 	boot_v3_vendor_boot|boot_v4_vendor_boot)
-		FIRE66_BOOTCONFIG="androidboot.init_fatal_reboot_target=recovery"
+		FIRE66_BOOTCONFIG=
 	;;
 	*)
 		FIRE66_BOOTCONFIG=
@@ -281,15 +278,6 @@ fi
 if [ "$VENDOR_BOOT_MAX_BYTES" -gt "$FIRE66_VENDOR_BOOT_PARTITION_BYTES" ]; then
 	die "VENDOR_BOOT_MAX_BYTES (${VENDOR_BOOT_MAX_BYTES}) exceeds vendor_boot partition size (${FIRE66_VENDOR_BOOT_PARTITION_BYTES})"
 fi
-if [ "$FIRE66_ALLOW_AVB_HEAP_OVERSUBSCRIBE" != 1 ] &&
-	{ [ "$FIRE66_BOOT_LAYOUT" = boot_v3_vendor_boot ] ||
-		[ "$FIRE66_BOOT_LAYOUT" = boot_v4_vendor_boot ]; }; then
-	avb_loaded_bytes=$((FIRE66_BOOT_PARTITION_BYTES + FIRE66_VENDOR_BOOT_PARTITION_BYTES))
-	avb_heap_budget=$((FIRE66_LK_AVB_HEAP_BYTES - FIRE66_LK_AVB_HEAP_RESERVE_BYTES))
-	if [ "$avb_loaded_bytes" -gt "$avb_heap_budget" ]; then
-		die "$FIRE66_BOOT_LAYOUT cannot boot on stock Fire LK AVB heap: boot partition (${FIRE66_BOOT_PARTITION_BYTES}) + vendor_boot partition (${FIRE66_VENDOR_BOOT_PARTITION_BYTES}) exceeds heap budget (${avb_heap_budget}); use a signed LK with larger AVB heap or a smaller vendor_boot GPT/partition size, or set FIRE66_ALLOW_AVB_HEAP_OVERSUBSCRIBE=1 only for diagnostics"
-	fi
-fi
 if [ -z "$AK3_FLASH_VENDOR_BOOT" ]; then
 	if [ "$FIRE66_BOOT_LAYOUT" = vendor_boot ] ||
 		[ "$FIRE66_BOOT_LAYOUT" = hybrid ] ||
@@ -333,6 +321,7 @@ need_tool cpio
 [ "$FIRE66_ROM_DIST_ONLY" = 1 ] || [ "$FIRE66_GKI_BOOT_SIGNATURE" != 1 ] || [ -x "$FIRE66_GKI_SIGNING_AVBTOOL" ] || die "Fire GKI signing avbtool not executable: $FIRE66_GKI_SIGNING_AVBTOOL"
 [ -z "$FIRE66_VENDOR_BOOT_FSTAB" ] || [ -f "$FIRE66_VENDOR_BOOT_FSTAB" ] || die "Fire vendor_boot fstab not found: $FIRE66_VENDOR_BOOT_FSTAB"
 [ -z "$FIRST_STAGE_VENDOR_BOOT_MODULES_FILE" ] || [ -f "$FIRST_STAGE_VENDOR_BOOT_MODULES_FILE" ] || die "first-stage vendor_boot module list not found: $FIRST_STAGE_VENDOR_BOOT_MODULES_FILE"
+[ -z "$FIRST_STAGE_VENDOR_BOOT_RECOVERY_MODULES_FILE" ] || [ -f "$FIRST_STAGE_VENDOR_BOOT_RECOVERY_MODULES_FILE" ] || die "first-stage recovery vendor_boot module list not found: $FIRST_STAGE_VENDOR_BOOT_RECOVERY_MODULES_FILE"
 if [ "$AK3_FLASH_VBMETA" = 1 ] && [ "$FIRE66_VBMETA_ALGORITHM" != NONE ]; then
 	[ -f "$FIRE66_VBMETA_KEY" ] || die "Fire vbmeta key not found: $FIRE66_VBMETA_KEY"
 fi
@@ -342,19 +331,6 @@ fi
 	die "unpack_bootimg not executable: $UNPACK_BOOTIMG"
 [ "$FIRE66_BOOT_LAYOUT" != boot_v4_vendor_boot ] || [ -x "$UNPACK_BOOTIMG" ] || \
 	die "unpack_bootimg not executable: $UNPACK_BOOTIMG"
-case "$FIRE66_BOOT_LAYOUT" in
-	boot_v3_vendor_boot|boot_v4_vendor_boot)
-		if [ "$FIRE66_ROM_DIST_ONLY" != 1 ] && [ -z "$FIRE66_BASE_BOOT_IMG" ]; then
-			FIRE66_BASE_BOOT_IMG=$(
-				first_file \
-					/home/deb/crdroid_fire_payload_20260630/boot.img \
-					/home/deb/fire_recovery_current_latest/boot_a.img \
-					/home/deb/fire_boot_header_probe_20260710-155324/partitions/boot_a.img \
-				|| true
-			)
-		fi
-	;;
-esac
 case "$FIRE66_BOOT_LAYOUT" in
 	boot_v3_vendor_boot|boot_v4_vendor_boot)
 		[ "$FIRE66_ROM_DIST_ONLY" = 1 ] || [ -f "$FIRE66_BASE_BOOT_IMG" ] ||
@@ -685,6 +661,8 @@ for ((i = 0; i < DTBO_ENTRY_COUNT; i++)); do
 done
 "$MKDTIMG" create "${DT_OUT}/dtbo.img" --page_size=2048 "${dtbo_entries[@]}" \
 	> "${DT_OUT}/mkdtimg.log" 2>&1
+"$MKDTIMG" create "${DT_OUT}/dtb.img" --page_size=2048 "${DT_OUT}/mt6768.dtb" \
+	> "${DT_OUT}/mkdtimg-dtb.log" 2>&1
 
 build_vendor_boot() {
 	local vendor_ramdisk=$1
@@ -723,7 +701,7 @@ build_vendor_boot() {
 		--vendor_cmdline "$FIRE66_VENDOR_CMDLINE" \
 		--vendor_ramdisk "$vendor_ramdisk" \
 		"${vendor_bootconfig_args[@]}" \
-		--dtb "${DT_OUT}/mt6768.dtb" \
+		--dtb "${DT_OUT}/dtb.img" \
 		--vendor_boot "${DT_OUT}/vendor_boot.img" \
 		> "${DT_OUT}/mkbootimg-vendor_boot.log" 2>&1
 	vendor_boot_size=$(stat -c %s "${DT_OUT}/vendor_boot.img")
@@ -1130,6 +1108,7 @@ build_fire_partition_hash_vbmeta() {
 build_fire_vbmeta() {
 	local -a props=()
 	local -a boot_descriptor_args=()
+	local -a dtbo_descriptor_args=()
 	local boot_hash_desc="${DT_OUT}/boot.desc.vbmeta"
 	local dtbo_desc="${DT_OUT}/dtbo.desc.vbmeta"
 	local vendor_boot_desc="${DT_OUT}/vendor_boot.desc.vbmeta"
@@ -1179,11 +1158,14 @@ build_fire_vbmeta() {
 	"$AVBTOOL" extract_public_key --key "$FIRE66_VBMETA_SYSTEM_KEY" --output "$system_pubkey"
 	"$AVBTOOL" extract_public_key --key "$FIRE66_VBMETA_VENDOR_KEY" --output "$vendor_pubkey"
 
-	build_fire_partition_hash_vbmeta \
-		"${DT_OUT}/dtbo.img" \
-		dtbo \
-		"$FIRE66_DTBO_PARTITION_BYTES" \
-		"$dtbo_desc"
+	if [ "$FIRE66_VBMETA_DTBO_DESCRIPTOR" = 1 ]; then
+		build_fire_partition_hash_vbmeta \
+			"${DT_OUT}/dtbo.img" \
+			dtbo \
+			"$FIRE66_DTBO_PARTITION_BYTES" \
+			"$dtbo_desc"
+		dtbo_descriptor_args=(--include_descriptors_from_image "$dtbo_desc")
+	fi
 	build_fire_partition_hash_vbmeta \
 		"${DT_OUT}/vendor_boot.img" \
 		vendor_boot \
@@ -1201,7 +1183,7 @@ build_fire_vbmeta() {
 		--chain_partition "vbmeta_vendor:${FIRE66_VBMETA_VENDOR_ROLLBACK_INDEX_LOCATION}:${vendor_pubkey}" \
 		"${props[@]}" \
 		"${boot_descriptor_args[@]}" \
-		--include_descriptors_from_image "$dtbo_desc" \
+		"${dtbo_descriptor_args[@]}" \
 		--include_descriptors_from_image "$vendor_boot_desc" \
 		> "${DT_OUT}/avbtool-vbmeta.log" 2>&1
 
@@ -1211,7 +1193,8 @@ build_fire_vbmeta() {
 		die "generated vbmeta.img does not describe boot"
 	grep -q 'Partition Name:.*vendor_boot' "${DT_OUT}/avbtool-vbmeta-info.log" ||
 		die "generated vbmeta.img does not describe vendor_boot"
-	grep -q 'Partition Name:.*dtbo' "${DT_OUT}/avbtool-vbmeta-info.log" ||
+	[ "$FIRE66_VBMETA_DTBO_DESCRIPTOR" != 1 ] ||
+		grep -q 'Partition Name:.*dtbo' "${DT_OUT}/avbtool-vbmeta-info.log" ||
 		die "generated vbmeta.img does not describe dtbo"
 }
 
@@ -1465,13 +1448,37 @@ generate_module_metadata() {
 	: > "${MOD_DST}/modules.symbols.bin"
 }
 
+read_module_list_file() {
+	local list_file=$1
+
+	sed -e 's/#.*//' \
+		-e 's/^[[:space:]]*//' \
+		-e 's/[[:space:]]*$//' \
+		-e '/^$/d' \
+		"$list_file"
+}
+
 read_first_stage_vendor_boot_modules() {
 	if [ -n "$FIRST_STAGE_VENDOR_BOOT_MODULES_FILE" ]; then
-		sed -e 's/#.*//' -e '/^[[:space:]]*$/d' \
-			"$FIRST_STAGE_VENDOR_BOOT_MODULES_FILE"
+		read_module_list_file "$FIRST_STAGE_VENDOR_BOOT_MODULES_FILE"
 	else
-		printf '%s\n' "$FIRST_STAGE_VENDOR_BOOT_MODULES"
+		printf '%s\n' $FIRST_STAGE_VENDOR_BOOT_MODULES
 	fi
+}
+
+read_first_stage_vendor_boot_recovery_modules() {
+	if [ -n "$FIRST_STAGE_VENDOR_BOOT_RECOVERY_MODULES_FILE" ]; then
+		read_module_list_file "$FIRST_STAGE_VENDOR_BOOT_RECOVERY_MODULES_FILE"
+	else
+		read_first_stage_vendor_boot_modules
+	fi
+}
+
+read_first_stage_vendor_boot_selected_modules() {
+	{
+		read_first_stage_vendor_boot_modules
+		read_first_stage_vendor_boot_recovery_modules
+	} | awk '!seen[$0]++'
 }
 
 strip_module_debug_symbols
@@ -1481,7 +1488,7 @@ build_first_stage_vendor_ramdisk() {
 	local vendor_ramdisk_dir="${WORK_DIR}/vendor_ramdisk"
 	local first_stage_dir="${vendor_ramdisk_dir}/first_stage_ramdisk"
 	local vendor_module_dir="${vendor_ramdisk_dir}/lib/modules"
-	local base dep deps line name first_stage_modules
+	local base dep deps line name first_stage_modules load_count recovery_load_count
 	local -A selected=()
 	local -a selected_order=()
 
@@ -1513,7 +1520,7 @@ build_first_stage_vendor_ramdisk() {
 		cp -f "$FIRE66_VENDOR_BOOT_FSTAB" "${first_stage_dir}/${FIRE66_VENDOR_BOOT_FSTAB_NAME}"
 	fi
 
-	first_stage_modules=$(read_first_stage_vendor_boot_modules)
+	first_stage_modules=$(read_first_stage_vendor_boot_selected_modules)
 	for base in $first_stage_modules; do
 		add_first_stage_module "$base"
 	done
@@ -1522,12 +1529,10 @@ build_first_stage_vendor_ramdisk() {
 	: > "${vendor_module_dir}/modules.alias"
 	: > "${vendor_module_dir}/modules.softdep"
 	: > "${vendor_module_dir}/modules.order"
-	: > "${vendor_module_dir}/modules.load"
 
 	for base in "${selected_order[@]}"; do
 		cp -f "${MOD_DST}/${base}" "${vendor_module_dir}/${base}"
 		printf '%s\n' "$base" >> "${vendor_module_dir}/modules.order"
-		printf '%s\n' "$base" >> "${vendor_module_dir}/modules.load"
 
 		line=$(grep -F "${base}:" "${MOD_DST}/modules.dep" | head -n1 || true)
 		printf '%s:' "$base" >> "${vendor_module_dir}/modules.dep"
@@ -1544,6 +1549,8 @@ build_first_stage_vendor_ramdisk() {
 		awk -v module="$name" '$2 == module { print }' "${MOD_DST}/modules.softdep" \
 			>> "${vendor_module_dir}/modules.softdep"
 	done
+	read_first_stage_vendor_boot_modules > "${vendor_module_dir}/modules.load"
+	read_first_stage_vendor_boot_recovery_modules > "${vendor_module_dir}/modules.load.recovery"
 
 	: > "${vendor_module_dir}/modules.builtin"
 	: > "${vendor_module_dir}/modules.builtin.modinfo"
@@ -1558,11 +1565,15 @@ build_first_stage_vendor_ramdisk() {
 			gzip -n -9 > "${DT_OUT}/vendor-ramdisk.cpio.gz"
 	)
 
-	echo "First-stage vendor_boot modules: ${#selected_order[@]}"
+	load_count=$(grep -c . "${vendor_module_dir}/modules.load" || true)
+	recovery_load_count=$(grep -c . "${vendor_module_dir}/modules.load.recovery" || true)
+	echo "First-stage vendor_boot selected modules: ${#selected_order[@]}"
+	echo "First-stage vendor_boot modules.load: ${load_count}"
+	echo "First-stage vendor_boot modules.load.recovery: ${recovery_load_count}"
 }
 
 validate_first_stage_vendor_boot_module_list() {
-	local base count=0
+	local base count=0 recovery_count=0
 
 	for base in $(read_first_stage_vendor_boot_modules); do
 		[ -f "${MOD_DST}/${base}" ] ||
@@ -1570,7 +1581,14 @@ validate_first_stage_vendor_boot_module_list() {
 		count=$((count + 1))
 	done
 
-	echo "First-stage vendor_boot module list: ${count}"
+	for base in $(read_first_stage_vendor_boot_recovery_modules); do
+		[ -f "${MOD_DST}/${base}" ] ||
+			die "first-stage recovery vendor_boot module is missing: ${base}"
+		recovery_count=$((recovery_count + 1))
+	done
+
+	echo "First-stage vendor_boot modules.load: ${count}"
+	echo "First-stage vendor_boot modules.load.recovery: ${recovery_count}"
 }
 
 if [ "$FIRE66_ROM_DIST_ONLY" = 1 ]; then
@@ -1612,7 +1630,8 @@ case "$(basename "$IMAGE")" in
 		cp -f "$IMAGE" "${ROM_ARTIFACTS_DIR}/$(basename "$IMAGE")"
 	;;
 esac
-cp -f "${DT_OUT}/mt6768.dtb" "${ROM_ARTIFACTS_DIR}/dtb"
+cp -f "${DT_OUT}/dtb.img" "${ROM_ARTIFACTS_DIR}/dtb"
+cp -f "${DT_OUT}/dtb.img" "${ROM_ARTIFACTS_DIR}/dtb.img"
 cp -f "${DT_OUT}/mt6768.dtb" "${ROM_ARTIFACTS_DIR}/mt6768.dtb"
 cp -f "${DT_OUT}/dtbo.img" "${ROM_ARTIFACTS_DIR}/dtbo.img"
 [ ! -f "${DT_OUT}/vendor_boot.img" ] || cp -f "${DT_OUT}/vendor_boot.img" "${ROM_ARTIFACTS_DIR}/vendor_boot.img"

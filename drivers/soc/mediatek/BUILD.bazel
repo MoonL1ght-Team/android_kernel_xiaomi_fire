@@ -1,0 +1,80 @@
+load("//build/bazel_mgk_rules:mgk_ko.bzl", "define_mgk_ko")
+
+package(
+    default_visibility = [
+        "//visibility:public",
+    ],
+)
+
+exports_files([
+    "Kconfig",
+])
+
+filegroup(
+    name = "sources",
+    srcs = glob([
+        "**",
+    ], exclude = [
+        "BUILD.bazel",
+    ]),
+)
+
+define_mgk_ko(
+    name = "mtk-dvfsrc",
+)
+
+define_mgk_ko(
+    name = "mtk-dvfsrc-start",
+)
+
+define_mgk_ko(
+    name = "mtk-mbox",
+)
+
+define_mgk_ko(
+    name = "mtk-mmdvfs",
+)
+
+define_mgk_ko(
+    name = "mtk-mmdvfs-v3",
+)
+
+define_mgk_ko(
+    name = "mtk-mmsys",
+)
+
+define_mgk_ko(
+    name = "mtk-mutex",
+)
+
+define_mgk_ko(
+    name = "mtk-pm-domain-disable-unused",
+)
+
+define_mgk_ko(
+    name = "mtk-pmic-wrap",
+)
+
+define_mgk_ko(
+    name = "mtk-scpsys",
+)
+
+define_mgk_ko(
+    name = "mtk-scpsys-bringup",
+)
+
+define_mgk_ko(
+    name = "mtk-scpsys-mt6768",
+)
+
+define_mgk_ko(
+    name = "mtk-socinfo",
+)
+
+define_mgk_ko(
+    name = "mtk_tinysys_ipi",
+)
+
+define_mgk_ko(
+    name = "scpsys-dummy",
+)
