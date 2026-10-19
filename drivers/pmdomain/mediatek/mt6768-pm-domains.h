@@ -27,10 +27,6 @@
 		    MT8183_SMI_COMMON_CLAMP_EN_CLR,        \
 		    MT8183_SMI_COMMON_CLAMP_EN)
 
-static enum scpsys_bus_prot_block scpsys_bus_prot_blocks_mt6768[] = {
-	BUS_PROT_BLOCK_INFRA, BUS_PROT_BLOCK_SMI
-};
-
 static const struct scpsys_domain_data scpsys_domain_data_mt6768[] = {
 	[MT6768_POWER_DOMAIN_MD1] = {
 		.name = "md1",
@@ -185,8 +181,6 @@ static const struct scpsys_domain_data scpsys_domain_data_mt6768[] = {
 static const struct scpsys_soc_data mt6768_scpsys_data = {
 	.domains_data = scpsys_domain_data_mt6768,
 	.num_domains = ARRAY_SIZE(scpsys_domain_data_mt6768),
-	.bus_prot_blocks = scpsys_bus_prot_blocks_mt6768,
-	.num_bus_prot_blocks = ARRAY_SIZE(scpsys_bus_prot_blocks_mt6768),
 };
 
 #endif /* __SOC_MEDIATEK_MT6768_PM_DOMAINS_H */
