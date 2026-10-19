@@ -13,6 +13,7 @@
 #include <linux/platform_device.h>
 #include <linux/io.h>
 #include <linux/module.h>
+#include <linux/of_address.h>
 #include <linux/of_irq.h>
 
 #include "mtk-eint.h"
@@ -367,6 +368,7 @@ static const struct mtk_eint_xt mtk_eint_xt = {
 int mtk_build_eint(struct mtk_pinctrl *hw, struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
+	struct device_node *eint_np;
 	int ret;
 
 	if (!IS_ENABLED(CONFIG_EINT_MTK))
@@ -379,13 +381,20 @@ int mtk_build_eint(struct mtk_pinctrl *hw, struct platform_device *pdev)
 	if (!hw->eint)
 		return -ENOMEM;
 
-	hw->eint->base = devm_platform_ioremap_resource_byname(pdev, "eint");
+	eint_np = of_parse_phandle(np, "mediatek,eint", 0);
+	if (eint_np)
+		hw->eint->base = devm_of_iomap(hw->dev, eint_np, 0, NULL);
+	else
+		hw->eint->base = devm_platform_ioremap_resource_byname(pdev,
+								 "eint");
 	if (IS_ERR(hw->eint->base)) {
 		ret = PTR_ERR(hw->eint->base);
+		of_node_put(eint_np);
 		goto err_free_eint;
 	}
 
-	hw->eint->irq = irq_of_parse_and_map(np, 0);
+	hw->eint->irq = irq_of_parse_and_map(eint_np ?: np, 0);
+	of_node_put(eint_np);
 	if (!hw->eint->irq) {
 		ret = -EINVAL;
 		goto err_free_eint;
