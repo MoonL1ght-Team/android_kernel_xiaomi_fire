@@ -144,6 +144,7 @@ static void clk_mt6768_apmixed_remove(struct platform_device *pdev)
 
 static const struct of_device_id of_match_mt6768_apmixedsys[] = {
 	{ .compatible = "mediatek,mt6768-apmixedsys" },
+	{ .compatible = "mediatek,apmixed" },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, of_match_mt6768_apmixedsys);
@@ -160,4 +161,3 @@ module_platform_driver(clk_mt6768_apmixedsys);
 
 MODULE_DESCRIPTION("MediaTek MT6768 apmixedsys clock driver");
 MODULE_LICENSE("GPL");
-

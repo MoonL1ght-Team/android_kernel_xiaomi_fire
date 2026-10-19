@@ -29,6 +29,7 @@ static const struct mtk_clk_desc peri_desc = {
 
 static const struct of_device_id of_match_mt6768_pericfg[] = {
 	{ .compatible = "mediatek,mt6768-pericfg", .data = &peri_desc },
+	{ .compatible = "mediatek,pericfg", .data = &peri_desc },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, of_match_mt6768_pericfg);
@@ -45,4 +46,3 @@ module_platform_driver(clk_mt6768_pericfg);
 
 MODULE_DESCRIPTION("MediaTek MT6768 pericfg clock driver");
 MODULE_LICENSE("GPL");
-

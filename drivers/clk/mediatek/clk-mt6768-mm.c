@@ -63,11 +63,34 @@ static const struct platform_device_id clk_mt6768_mm_id_table[] = {
 };
 MODULE_DEVICE_TABLE(platform, clk_mt6768_mm_id_table);
 
+static const struct of_device_id of_match_clk_mt6768_mm[] = {
+	{ .compatible = "mediatek,mmsys_config", .data = &mm_desc },
+	{ /* sentinel */ }
+};
+MODULE_DEVICE_TABLE(of, of_match_clk_mt6768_mm);
+
+static int clk_mt6768_mm_probe(struct platform_device *pdev)
+{
+	if (pdev->dev.of_node)
+		return mtk_clk_simple_probe(pdev);
+
+	return mtk_clk_pdev_probe(pdev);
+}
+
+static void clk_mt6768_mm_remove(struct platform_device *pdev)
+{
+	if (pdev->dev.of_node)
+		mtk_clk_simple_remove(pdev);
+	else
+		mtk_clk_pdev_remove(pdev);
+}
+
 static struct platform_driver clk_mt6768_mm = {
-	.probe = mtk_clk_pdev_probe,
-	.remove = mtk_clk_pdev_remove,
+	.probe = clk_mt6768_mm_probe,
+	.remove = clk_mt6768_mm_remove,
 	.driver = {
 		.name = "clk-mt6768-mm",
+		.of_match_table = of_match_clk_mt6768_mm,
 	},
 	.id_table = clk_mt6768_mm_id_table,
 };
@@ -75,4 +98,3 @@ module_platform_driver(clk_mt6768_mm);
 
 MODULE_DESCRIPTION("MediaTek MT6768 MultiMedia clocks driver");
 MODULE_LICENSE("GPL");
-

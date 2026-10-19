@@ -26,6 +26,7 @@ static const struct mtk_clk_desc mfg_desc = {
 
 static const struct of_device_id of_match_clk_mt6768_mfg[] = {
 	{ .compatible = "mediatek,mt6768-mfgcfg", .data = &mfg_desc },
+	{ .compatible = "mediatek,mfgcfg", .data = &mfg_desc },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, of_match_clk_mt6768_mfg);
@@ -42,4 +43,3 @@ module_platform_driver(clk_mt6768_mfg);
 
 MODULE_DESCRIPTION("MediaTek MT6768 mfg clocks driver");
 MODULE_LICENSE("GPL");
-

@@ -52,6 +52,9 @@ static const struct of_device_id of_match_clk_mt6768_audio[] = {
 		.compatible = "mediatek,mt6768-audsys",
 		.data = &audio_desc,
 	}, {
+		.compatible = "mediatek,audio",
+		.data = &audio_desc,
+	}, {
 		/* sentinel */
 	}
 };
@@ -69,4 +72,3 @@ module_platform_driver(clk_mt6768_audio_drv);
 
 MODULE_DESCRIPTION("MediaTek MT6768 audio clocks driver");
 MODULE_LICENSE("GPL");
-

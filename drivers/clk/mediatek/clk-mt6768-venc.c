@@ -30,6 +30,7 @@ static const struct mtk_clk_desc venc_desc = {
 
 static const struct of_device_id of_match_mt6768_venc[] = {
 	{ .compatible = "mediatek,mt6768-vencsys", .data = &venc_desc },
+	{ .compatible = "mediatek,venc_gcon", .data = &venc_desc },
 	{ /* sentinel */ }
 };
 
@@ -45,4 +46,3 @@ module_platform_driver(clk_mt6768_venc);
 
 MODULE_DESCRIPTION("Mediatek MT6768 Video Encoders clock driver");
 MODULE_LICENSE("GPL");
-

@@ -39,6 +39,7 @@ static const struct mtk_clk_desc mcu_desc = {
 
 static const struct of_device_id of_match_clk_mt6768_mcu[] = {
 	{ .compatible = "mediatek,mt6768-mcucfg", .data = &mcu_desc },
+	{ .compatible = "mediatek,mcucfg", .data = &mcu_desc },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, of_match_clk_mt6768_mcu);
@@ -55,4 +56,3 @@ module_platform_driver(clk_mt6768_mcu_drv);
 
 MODULE_DESCRIPTION("MediaTek MT6768 MicroController Unit clocks driver");
 MODULE_LICENSE("GPL");
-

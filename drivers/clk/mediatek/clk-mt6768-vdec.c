@@ -43,6 +43,9 @@ static const struct of_device_id of_match_clk_mt6768_vdec[] = {
 		.compatible = "mediatek,mt6768-vdecsys",
 		.data = &vdec_desc,
 	}, {
+		.compatible = "mediatek,vdec_gcon",
+		.data = &vdec_desc,
+	}, {
 		/* sentinel */
 	}
 };
@@ -61,4 +64,3 @@ module_platform_driver(clk_mt6768_vdec_drv);
 
 MODULE_DESCRIPTION("MediaTek MT6768 Video Decoders clocks driver");
 MODULE_LICENSE("GPL");
-

@@ -695,7 +695,13 @@ static const struct of_device_id of_match_clk_mt6768[] = {
 		.compatible = "mediatek,mt6768-topckgen",
 		.data = clk_mt6768_top_probe,
 	}, {
+		.compatible = "mediatek,topckgen",
+		.data = clk_mt6768_top_probe,
+	}, {
 		.compatible = "mediatek,mt6768-infracfg_ao",
+		.data = clk_mt6768_infra_probe,
+	}, {
+		.compatible = "mediatek,infracfg_ao",
 		.data = clk_mt6768_infra_probe,
 	}, {
 		/* sentinel */

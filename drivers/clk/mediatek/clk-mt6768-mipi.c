@@ -123,6 +123,12 @@ static const struct of_device_id of_match_clk_mt6768_mipi[] = {
 	{ .compatible = "mediatek,mt6768-mipi1b", .data = &mipi1b_desc },
 	{ .compatible = "mediatek,mt6768-mipi2a", .data = &mipi2a_desc },
 	{ .compatible = "mediatek,mt6768-mipi2b", .data = &mipi2b_desc },
+	{ .compatible = "mediatek,mipi_rx_ana_csi0a", .data = &mipi0a_desc },
+	{ .compatible = "mediatek,mipi_rx_ana_csi0b", .data = &mipi0b_desc },
+	{ .compatible = "mediatek,mipi_rx_ana_csi1a", .data = &mipi1a_desc },
+	{ .compatible = "mediatek,mipi_rx_ana_csi1b", .data = &mipi1b_desc },
+	{ .compatible = "mediatek,mipi_rx_ana_csi2a", .data = &mipi2a_desc },
+	{ .compatible = "mediatek,mipi_rx_ana_csi2b", .data = &mipi2b_desc },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, of_match_clk_mt6768_mipi);
@@ -139,4 +145,3 @@ module_platform_driver(clk_mt6768_mipi);
 
 MODULE_DESCRIPTION("MediaTek MT6768 Camera clocks driver");
 MODULE_LICENSE("GPL");
-
