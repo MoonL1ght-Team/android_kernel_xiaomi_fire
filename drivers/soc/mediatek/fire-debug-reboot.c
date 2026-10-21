@@ -10,6 +10,8 @@
  * even a watchdog reset. fire_debug_reboot.delay=<seconds> additionally
  * saves the log and panics, so the device keeps cycling. The timers are
  * armed from core_initcall so they still fire if a driver hangs probing.
+ * Around FIRE_DUMP_AT seconds the blocked tasks and all CPU backtraces
+ * are logged once, to show where a hang sits.
  *
  * Layout at FIRE_KMSG_OFFSET: "FIREKMSG", __le32 length, log text.
  */
@@ -20,7 +22,9 @@
 #include <linux/kernel.h>
 #include <linux/kmsg_dump.h>
 #include <linux/module.h>
+#include <linux/nmi.h>
 #include <linux/panic.h>
+#include <linux/sched/debug.h>
 #include <linux/string.h>
 #include <linux/unaligned.h>
 #include <linux/vmalloc.h>
@@ -30,6 +34,7 @@
 #define FIRE_KMSG_OFFSET	(16 << 20)
 #define FIRE_KMSG_SIZE		(2 << 20)
 #define FIRE_KMSG_HDR		12
+#define FIRE_DUMP_AT		18
 
 static unsigned int delay;
 module_param(delay, uint, 0444);
@@ -109,6 +114,16 @@ static DECLARE_DELAYED_WORK(fire_debug_save_work, fire_debug_save_fn);
 
 static void fire_debug_save_fn(struct work_struct *work)
 {
+	static unsigned int nsave;
+	static bool dumped;
+
+	nsave++;
+	pr_info("fire-debug-reboot: save #%u\n", nsave);
+	if (!dumped && nsave * interval >= FIRE_DUMP_AT) {
+		dumped = true;
+		show_state_filter(TASK_UNINTERRUPTIBLE);
+		trigger_all_cpu_backtrace();
+	}
 	fire_save_kmsg_locked();
 	queue_delayed_work(system_unbound_wq, &fire_debug_save_work,
 			   interval * HZ);
