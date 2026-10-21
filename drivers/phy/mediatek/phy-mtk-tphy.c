@@ -111,9 +111,14 @@
 
 #define U3P_U2PHYDTM1		0x06C
 #define P2C_RG_UART_EN			BIT(16)
+#define P2C_FORCE_VBUSVALID		BIT(13)
+#define P2C_FORCE_SESSEND		BIT(12)
+#define P2C_FORCE_BVALID		BIT(11)
+#define P2C_FORCE_AVALID		BIT(10)
 #define P2C_FORCE_IDDIG		BIT(9)
 #define P2C_RG_VBUSVALID		BIT(5)
 #define P2C_RG_SESSEND			BIT(4)
+#define P2C_RG_BVALID			BIT(3)
 #define P2C_RG_AVALID			BIT(2)
 #define P2C_RG_IDDIG			BIT(1)
 
@@ -332,6 +337,7 @@ struct mtk_phy_instance {
 	int pre_emphasis;
 	bool bc12_en;
 	bool type_force_mode;
+	bool force_vbus;
 };
 
 struct mtk_tphy {
@@ -950,6 +956,12 @@ static void u2_phy_instance_set_mode(struct mtk_tphy *tphy,
 	switch (mode) {
 	case PHY_MODE_USB_DEVICE:
 		tmp |= P2C_FORCE_IDDIG | P2C_RG_IDDIG;
+		if (instance->force_vbus) {
+			tmp &= ~P2C_RG_SESSEND;
+			tmp |= P2C_FORCE_VBUSVALID | P2C_FORCE_SESSEND |
+			       P2C_FORCE_BVALID | P2C_FORCE_AVALID |
+			       P2C_RG_VBUSVALID | P2C_RG_BVALID | P2C_RG_AVALID;
+		}
 		break;
 	case PHY_MODE_USB_HOST:
 		tmp |= P2C_FORCE_IDDIG;
@@ -1655,6 +1667,12 @@ static int mtk_tphy_probe(struct platform_device *pdev)
 
 		instance->phy = phy;
 		instance->index = port;
+		/*
+		 * On MT6768 phones VBUS is sensed by the charger IC rather than
+		 * routed to the PHY, so the vendor driver forces the session
+		 * signals whenever the port acts as a device. Do the same.
+		 */
+		instance->force_vbus = of_machine_is_compatible("mediatek,mt6768");
 		phy_set_drvdata(phy, instance);
 		port++;
 

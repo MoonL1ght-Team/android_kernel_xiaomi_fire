@@ -39,8 +39,14 @@
 
 #define MTK_MUSB_CLKS_NUM	3
 
+struct mtk_musb_pdata {
+	const char *clk_names[MTK_MUSB_CLKS_NUM];
+	int devid;
+};
+
 struct mtk_glue {
 	struct device *dev;
+	const struct mtk_musb_pdata *pdata;
 	struct musb *musb;
 	struct platform_device *musb_pdev;
 	struct platform_device *usb_phy;
@@ -55,10 +61,10 @@ struct mtk_glue {
 static int mtk_musb_clks_get(struct mtk_glue *glue)
 {
 	struct device *dev = glue->dev;
+	int i;
 
-	glue->clks[0].id = "main";
-	glue->clks[1].id = "mcu";
-	glue->clks[2].id = "univpll";
+	for (i = 0; i < MTK_MUSB_CLKS_NUM; i++)
+		glue->clks[i].id = glue->pdata->clk_names[i];
 
 	return devm_clk_bulk_get(dev, MTK_MUSB_CLKS_NUM, glue->clks);
 }
@@ -411,6 +417,7 @@ static int mtk_musb_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	glue->dev = dev;
+	glue->pdata = of_device_get_match_data(dev);
 	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
 		return -ENOMEM;
@@ -477,6 +484,7 @@ static int mtk_musb_probe(struct platform_device *pdev)
 		goto err_enable_clk;
 
 	pinfo = mtk_dev_info;
+	pinfo.id = glue->pdata->devid;
 	pinfo.parent = dev;
 	pinfo.res = pdev->resource;
 	pinfo.num_res = pdev->num_resources;
@@ -514,8 +522,23 @@ static void mtk_musb_remove(struct platform_device *pdev)
 }
 
 #ifdef CONFIG_OF
+static const struct mtk_musb_pdata mtk_musb_pdata = {
+	.clk_names = { "main", "mcu", "univpll" },
+	.devid = PLATFORM_DEVID_AUTO,
+};
+
+/*
+ * MT6768 vendor device tree: different clock names, and Android expects
+ * the UDC to be called plain "musb-hdrc".
+ */
+static const struct mtk_musb_pdata mt6768_musb_pdata = {
+	.clk_names = { "sys_clk", "ref_clk", "src_clk" },
+	.devid = PLATFORM_DEVID_NONE,
+};
+
 static const struct of_device_id mtk_musb_match[] = {
-	{.compatible = "mediatek,mtk-musb",},
+	{.compatible = "mediatek,mtk-musb", .data = &mtk_musb_pdata},
+	{.compatible = "mediatek,mt6768-usb20", .data = &mt6768_musb_pdata},
 	{},
 };
 MODULE_DEVICE_TABLE(of, mtk_musb_match);
