@@ -127,16 +127,27 @@ static const struct seq_operations pstore_ftrace_seq_ops = {
 	.show	= pstore_ftrace_seq_show,
 };
 
-static ssize_t pstore_file_read(struct file *file, char __user *userbuf,
-						size_t count, loff_t *ppos)
+static ssize_t pstore_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 {
-	struct seq_file *sf = file->private_data;
+	struct seq_file *sf = iocb->ki_filp->private_data;
 	struct pstore_private *ps = sf->private;
+	loff_t pos = iocb->ki_pos;
+	size_t n;
 
 	if (ps->record->type == PSTORE_TYPE_FTRACE)
-		return seq_read(file, userbuf, count, ppos);
-	return simple_read_from_buffer(userbuf, count, ppos,
-				       ps->record->buf, ps->total_size);
+		return seq_read_iter(iocb, to);
+	if (pos < 0)
+		return -EINVAL;
+	if (pos >= ps->total_size)
+		return 0;
+	n = min_t(size_t, iov_iter_count(to), ps->total_size - pos);
+	if (!n)
+		return 0;
+	n = copy_to_iter(ps->record->buf + pos, n, to);
+	if (!n)
+		return -EFAULT;
+	iocb->ki_pos += n;
+	return n;
 }
 
 static int pstore_file_open(struct inode *inode, struct file *file)
@@ -170,7 +181,7 @@ static loff_t pstore_file_llseek(struct file *file, loff_t off, int whence)
 
 static const struct file_operations pstore_file_operations = {
 	.open		= pstore_file_open,
-	.read		= pstore_file_read,
+	.read_iter	= pstore_file_read_iter,
 	.llseek		= pstore_file_llseek,
 	.release	= seq_release,
 };
