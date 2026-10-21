@@ -6396,7 +6396,8 @@ unlock:
 	return 0;
 }
 
-static bool regulator_ignore_unused;
+static bool regulator_ignore_unused =
+	IS_ENABLED(CONFIG_FIRE_KEEP_BOOT_RESOURCES);
 static int __init regulator_ignore_unused_setup(char *__unused)
 {
 	regulator_ignore_unused = true;

@@ -1512,7 +1512,8 @@ unlock_out:
 		clk_core_disable_unprepare(core->parent);
 }
 
-static bool clk_ignore_unused __initdata;
+static bool clk_ignore_unused __initdata =
+	IS_ENABLED(CONFIG_FIRE_KEEP_BOOT_RESOURCES);
 static int __init clk_ignore_unused_setup(char *__unused)
 {
 	clk_ignore_unused = true;

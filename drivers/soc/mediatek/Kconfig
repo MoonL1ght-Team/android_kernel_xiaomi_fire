@@ -56,6 +56,14 @@ config FIRE_BOOTFB
 	  Read the framebuffer LK leaves on screen back from the OVL engine
 	  and register it as a simple-framebuffer for simpledrm.
 
+config FIRE_KEEP_BOOT_RESOURCES
+	bool "Keep bootloader-enabled clocks, power domains and regulators"
+	help
+	  Make clk_ignore_unused, pd_ignore_unused and
+	  regulator_ignore_unused the default. On Xiaomi fire most consumers
+	  are not driven yet; turning their resources off kills the
+	  display path, and dropping vdram2 at late init resets the phone.
+
 config MTK_INFRACFG
 	tristate "MediaTek INFRACFG Support"
 	select REGMAP

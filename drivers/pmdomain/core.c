@@ -1264,7 +1264,7 @@ err_poweroff:
 	return ret;
 }
 
-static bool pd_ignore_unused;
+static bool pd_ignore_unused = IS_ENABLED(CONFIG_FIRE_KEEP_BOOT_RESOURCES);
 static int __init pd_ignore_unused_setup(char *__unused)
 {
 	pd_ignore_unused = true;
