@@ -4,8 +4,8 @@
  *
  * There is no MediaTek display driver on this kernel yet, but LK leaves
  * the panel running in video mode, scanning out a framebuffer through
- * the OVL engine. Read the first enabled OVL layer back from the
- * hardware and register a "simple-framebuffer" device for exactly that
+ * the OVL engine. Read the topmost enabled OVL layer (LK puts its UI on
+ * the last one) back from the hardware and register a "simple-framebuffer" device for exactly that
  * buffer, so simplefb and fbcon can draw on the screen.
  *
  * Android's SELinux policy hides the kernel log from adb shell, so the
@@ -112,8 +112,15 @@ static int __init fire_bootfb_probe_ovl(int idx, phys_addr_t base,
 	src_con = readl(regs + OVL_SRC_CON);
 	for (layer = 0; layer < OVL_LAYERS; layer++)
 		if (src_con & BIT(layer))
+			fire_bootfb_report(idx, src_con, layer,
+					   readl(regs + OVL_SRC_SIZE(layer)),
+					   readl(regs + OVL_PITCH(layer)) & 0xffff,
+					   readl(regs + OVL_CON(layer)),
+					   readl(regs + OVL_ADDR(layer)));
+	for (layer = OVL_LAYERS - 1; layer >= 0; layer--)
+		if (src_con & BIT(layer))
 			break;
-	if (layer == OVL_LAYERS) {
+	if (layer < 0) {
 		iounmap(regs);
 		fire_bootfb_report(idx, src_con, -1, 0, 0, 0, 0);
 		return -ENODEV;
@@ -124,7 +131,6 @@ static int __init fire_bootfb_probe_ovl(int idx, phys_addr_t base,
 	pitch = readl(regs + OVL_PITCH(layer)) & 0xffff;
 	addr = readl(regs + OVL_ADDR(layer));
 	iounmap(regs);
-	fire_bootfb_report(idx, src_con, layer, size, pitch, con, addr);
 
 	pdata.width = size & 0x1fff;
 	pdata.height = (size >> 16) & 0x1fff;
