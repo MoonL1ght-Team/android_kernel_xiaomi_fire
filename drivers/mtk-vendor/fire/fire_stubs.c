@@ -3,9 +3,11 @@
  * Xiaomi fire: stand-ins for vendor providers mediatek_v2 links against
  * but MT6768 does not use for display: MML (newer SoCs' media path),
  * the frequency meter, DRAMC info, MMDVFS debug, and the SMI and IOMMU
- * debug helpers (smi-dbg, iommu_debug).
+ * debug helpers (smi-dbg, iommu_debug), the GIC IRQ dump and the SLC
+ * group id of dma-bufs (MT6768 has no system level cache).
  */
 
+#include <linux/dma-buf.h>
 #include <linux/errno.h>
 #include <linux/platform_device.h>
 #include <linux/seq_file.h>
@@ -114,4 +116,11 @@ int mtk_iommu_register_fault_callback(int port, mtk_iommu_fault_callback_t fn,
 				      void *cb_data, bool is_vpu)
 {
 	return 0;
+}
+
+void mt_irq_dump_status(unsigned int irq) { }
+
+int dma_buf_get_gid(struct dma_buf *dmabuf)
+{
+	return -EOPNOTSUPP;
 }

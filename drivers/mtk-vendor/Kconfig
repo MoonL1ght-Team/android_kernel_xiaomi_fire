@@ -4,6 +4,13 @@ menu "MediaTek vendor drivers for Xiaomi fire"
 config FIRE_MTK_VENDOR_DRM
 	bool "MediaTek mediatek_v2 display (DRM) driver"
 	depends on DRM && ARCH_MEDIATEK
+	select DRM_DISPLAY_DP_HELPER
+	select DRM_DISPLAY_HELPER
+	select DRM_GEM_DMA_HELPER
+	select DRM_KMS_HELPER
+	select DRM_MIPI_DSI
+	select DRM_PANEL
+	select VIDEOMODE_HELPERS
 	help
 	  Vendor mediatek_v2 DRM driver from kernel_device_modules-6.6,
 	  needed by the Android hwcomposer on MT6768.
