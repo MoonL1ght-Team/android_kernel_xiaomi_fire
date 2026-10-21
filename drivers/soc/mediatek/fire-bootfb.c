@@ -4,8 +4,9 @@
  *
  * There is no MediaTek display driver on this kernel yet, but LK leaves
  * the panel running in video mode, scanning out a framebuffer through
- * the OVL engine. Read the topmost enabled OVL layer (LK puts its UI on
- * the last one) back from the hardware and register a "simple-framebuffer" device for exactly that
+ * the OVL engine. Read the first enabled OVL layer back from the
+ * hardware, turn the other layers off so they cannot cover it, and
+ * register a "simple-framebuffer" device for exactly that
  * buffer, so simplefb and fbcon can draw on the screen.
  *
  * Android's SELinux policy hides the kernel log from adb shell, so the
@@ -117,10 +118,10 @@ static int __init fire_bootfb_probe_ovl(int idx, phys_addr_t base,
 					   readl(regs + OVL_PITCH(layer)) & 0xffff,
 					   readl(regs + OVL_CON(layer)),
 					   readl(regs + OVL_ADDR(layer)));
-	for (layer = OVL_LAYERS - 1; layer >= 0; layer--)
+	for (layer = 0; layer < OVL_LAYERS; layer++)
 		if (src_con & BIT(layer))
 			break;
-	if (layer < 0) {
+	if (layer == OVL_LAYERS) {
 		iounmap(regs);
 		fire_bootfb_report(idx, src_con, -1, 0, 0, 0, 0);
 		return -ENODEV;
@@ -130,7 +131,6 @@ static int __init fire_bootfb_probe_ovl(int idx, phys_addr_t base,
 	size = readl(regs + OVL_SRC_SIZE(layer));
 	pitch = readl(regs + OVL_PITCH(layer)) & 0xffff;
 	addr = readl(regs + OVL_ADDR(layer));
-	iounmap(regs);
 
 	pdata.width = size & 0x1fff;
 	pdata.height = (size >> 16) & 0x1fff;
@@ -141,10 +141,15 @@ static int __init fire_bootfb_probe_ovl(int idx, phys_addr_t base,
 		&base, layer, pdata.width, pdata.height, pitch, con, addr);
 
 	if (!pdata.format || !addr || !pdata.width || !pdata.height ||
-	    pitch < pdata.width * bpp)
-		return -EINVAL;
-	if (!register_fb)
-		return 0;
+	    pitch < pdata.width * bpp || !register_fb) {
+		iounmap(regs);
+		return register_fb ? -EINVAL : 0;
+	}
+
+	/* LK also enables layer 3 on top; keep only the layer we draw on. */
+	if (src_con != BIT(layer))
+		writel(BIT(layer), regs + OVL_SRC_CON);
+	iounmap(regs);
 
 	res.start = addr;
 	res.end = addr + (resource_size_t)pitch * pdata.height - 1;
