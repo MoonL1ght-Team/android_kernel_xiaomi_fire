@@ -49,6 +49,13 @@ config MTK_RPMB_SOTER
 	  Provide /dev/rpmb0 with the vendor rpmb-mtk ioctls used by the
 	  Microtrust teei_daemon, routed through the RPMB subsystem.
 
+config FIRE_BOOTFB
+	bool "Xiaomi fire bootloader framebuffer for simpledrm"
+	depends on ARCH_MEDIATEK || COMPILE_TEST
+	help
+	  Read the framebuffer LK leaves on screen back from the OVL engine
+	  and register it as a simple-framebuffer for simpledrm.
+
 config MTK_INFRACFG
 	tristate "MediaTek INFRACFG Support"
 	select REGMAP
