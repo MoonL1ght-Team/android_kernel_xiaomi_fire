@@ -26,6 +26,14 @@ config MTK_DEVAPC
 	  The violation information is logged for further analysis or
 	  countermeasures.
 
+config MTK_DVFSRC_STUB
+	tristate "MediaTek MT6768 DVFSRC placeholder"
+	depends on ARCH_MEDIATEK || COMPILE_TEST
+	help
+	  Bind a no-op driver to the MT6768 DVFSRC node so that consumers
+	  referencing it through "dvfsrc-vcore-supply" (such as the MSDC
+	  hosts in the vendor device tree) are not held back by fw_devlink.
+
 config MTK_INFRACFG
 	tristate "MediaTek INFRACFG Support"
 	select REGMAP
