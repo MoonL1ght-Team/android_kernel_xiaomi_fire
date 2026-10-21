@@ -96,6 +96,30 @@ static void __init fire_bootfb_report(int idx, u32 src_con, int layer,
 	platform_device_register_simple(name, PLATFORM_DEVID_NONE, NULL, 0);
 }
 
+/*
+ * Paint test bars straight into the scanned-out buffer: white on top, then
+ * 0xff0000, 0x00ff00 and 0x0000ff, to check the display really reads this
+ * buffer and to tell the channel order. fbcon overwrites it if it works.
+ */
+static void __init fire_bootfb_test_pattern(u32 addr, u32 pitch, u32 width,
+					    u32 height)
+{
+	static const u32 bars[] = { 0xffffffff, 0xffff0000, 0xff00ff00,
+				    0xff0000ff };
+	void __iomem *fb;
+	u32 x, y, band;
+
+	fb = ioremap_wc(addr, (size_t)pitch * height);
+	if (!fb)
+		return;
+	for (y = 0; y < height / 2; y++) {
+		band = y * ARRAY_SIZE(bars) / (height / 2);
+		for (x = 0; x < width; x++)
+			writel(bars[band], fb + y * pitch + x * 4);
+	}
+	iounmap(fb);
+}
+
 static int __init fire_bootfb_probe_ovl(int idx, phys_addr_t base,
 					bool register_fb)
 {
@@ -150,6 +174,9 @@ static int __init fire_bootfb_probe_ovl(int idx, phys_addr_t base,
 	if (src_con != BIT(layer))
 		writel(BIT(layer), regs + OVL_SRC_CON);
 	iounmap(regs);
+
+	if (bpp == 4)
+		fire_bootfb_test_pattern(addr, pitch, pdata.width, pdata.height);
 
 	res.start = addr;
 	res.end = addr + (resource_size_t)pitch * pdata.height - 1;
