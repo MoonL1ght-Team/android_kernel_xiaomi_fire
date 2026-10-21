@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0
+DEVICE_MODULES_PATH ?= $(srctree)/drivers/mtk-vendor
+LINUXINCLUDE := -I$(DEVICE_MODULES_PATH)/include $(LINUXINCLUDE)
+ccflags-y += -I$(DEVICE_MODULES_PATH)/drivers/gpu/drm/mediatek/mml \
+	     -I$(DEVICE_MODULES_PATH)/drivers/clk/mediatek \
+	     -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/mmdvfs \
+	     -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/include \
+	     -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/iommu \
+	     -I$(DEVICE_MODULES_PATH)/drivers/iommu
+obj-y += fire_stubs.o

@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: GPL-2.0
+menu "MediaTek vendor drivers for Xiaomi fire"
+
+config FIRE_MTK_VENDOR_DRM
+	bool "MediaTek mediatek_v2 display (DRM) driver"
+	depends on DRM && ARCH_MEDIATEK
+	help
+	  Vendor mediatek_v2 DRM driver from kernel_device_modules-6.6,
+	  needed by the Android hwcomposer on MT6768.
+
+# Symbols the vendor Makefiles and sources key off.
+config DEVICE_MODULES_DRM_MEDIATEK
+	def_bool FIRE_MTK_VENDOR_DRM
+
+config DRM_MEDIATEK_V2
+	def_bool FIRE_MTK_VENDOR_DRM
+
+config MTK_CMDQ_MBOX_EXT
+	def_bool FIRE_MTK_VENDOR_DRM
+
+config DEVICE_MODULES_MTK_SMI
+	def_bool FIRE_MTK_VENDOR_DRM
+
+config MTK_CMDQ_MBOX_EXT_MT6768
+	def_bool MTK_CMDQ_MBOX_EXT
+
+config DEVICE_MODULES_MTK_IOMMU
+	def_bool FIRE_MTK_VENDOR_DRM
+	select IOMMU_API
+	select IOMMU_IO_PGTABLE_ARMV7S
+
+endmenu

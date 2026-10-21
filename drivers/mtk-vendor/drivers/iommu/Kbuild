@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0
+# fire 6.12: vendor M4U driver (replaces upstream CONFIG_MTK_IOMMU).
+DEVICE_MODULES_PATH ?= $(srctree)/drivers/mtk-vendor
+LINUXINCLUDE := -I$(DEVICE_MODULES_PATH)/include $(LINUXINCLUDE)
+ccflags-y += -DIOMMU_BRING_UP=0 \
+	     -I$(DEVICE_MODULES_PATH)/drivers/iommu \
+	     -I$(srctree)/drivers/iommu \
+	     -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/iommu \
+	     -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/include
+obj-$(CONFIG_DEVICE_MODULES_MTK_IOMMU) += mtk_iommu.o

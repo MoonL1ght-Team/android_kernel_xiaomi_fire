@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0
+# fire 6.12: vendor SMI driver (replaces upstream CONFIG_MTK_SMI).
+DEVICE_MODULES_PATH ?= $(srctree)/drivers/mtk-vendor
+LINUXINCLUDE := -I$(DEVICE_MODULES_PATH)/include $(LINUXINCLUDE)
+ccflags-y += -I$(DEVICE_MODULES_PATH)/drivers/memory \
+	     -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/mme \
+	     -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/include
+obj-$(CONFIG_DEVICE_MODULES_MTK_SMI) += mtk-smi.o

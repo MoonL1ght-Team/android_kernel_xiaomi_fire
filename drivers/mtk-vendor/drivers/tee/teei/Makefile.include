@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0
+# fire 6.12: TEEI lives in the main tree (drivers/tee/teei).
+ifneq ($(filter y m, $(CONFIG_MICROTRUST_TEE_SUPPORT)),)
+VERSION := $(subst ",,$(CONFIG_MICROTRUST_TEE_VERSION))
+ccflags-y += -I$(srctree)/drivers/tee/teei/$(VERSION)/common/include/
+ccflags-y += -I$(srctree)/drivers/tee/teei/$(VERSION)/public/
+ccflags-y += -I$(srctree)/drivers/tee/teei/$(VERSION)/tz_driver/include/
+ccflags-y += -I$(srctree)/drivers/tee/teei/$(VERSION)/tz_driver/
+endif

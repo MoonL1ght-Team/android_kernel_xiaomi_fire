@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0
+# fire 6.12: reuse the vendor Makefile, which expects these to be set.
+DEVICE_MODULES_PATH ?= $(srctree)/drivers/mtk-vendor
+KERNELRELEASE ?= $(shell cat include/config/kernel.release)
+include $(src)/Makefile
+# fire: AOD through SCP is not used on MT6768.
+obj-y := $(filter-out mtk_aod_scp.o,$(obj-y))

@@ -1,0 +1,50 @@
+load("//build/bazel_mgk_rules:mgk_ko.bzl", "define_mgk_ko")
+load("//build/kernel/kleaf:kernel.bzl", "ddk_headers")
+
+package(
+    default_visibility = [
+        "//visibility:public",
+    ],
+)
+
+exports_files([
+    "Kconfig",
+    "mtk_sync.c",
+    "mtk_drm_edp/Kconfig",
+])
+
+filegroup(
+    name = "sources",
+    srcs = glob([
+        "**",
+    ], exclude = [
+        "BUILD.bazel",
+    ]),
+)
+
+ddk_headers(
+    name = "mtk_disp_notify_headers",
+    hdrs = [
+        "mtk_disp_notify.h",
+    ],
+    includes = [
+        ".",
+    ],
+)
+
+define_mgk_ko(
+    name = "mtk_disp_notify",
+    deps = [
+        "//kernel_device_modules-6.6/drivers/gpu/drm/mediatek/mtk_sync:mtk_sync",
+        "//kernel_device_modules-6.6/drivers/gpu/drm/mediatek/mml:mtk-mml",
+        "//kernel_device_modules-6.6/drivers/misc/mediatek/aee/mrdump:mrdump",
+        "//kernel_device_modules-6.6/drivers/misc/mediatek/mme/src:mme",
+        "//kernel_device_modules-6.6/drivers/misc/mediatek/mmp/src:mmprofile",
+    ],
+    outs = [
+        "mediatek-drm.ko",
+        "mtk_disp_notify.ko",
+        "mtk_disp_sec.ko",
+        "mtk_panel_ext.ko",
+    ],
+)
