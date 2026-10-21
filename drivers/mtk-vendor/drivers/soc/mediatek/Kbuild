@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0
+# fire 6.12: vendor scpsys for the legacy "mediatek,mt6768-scpsys" binding
+# used by the stock device tree.
+DEVICE_MODULES_PATH ?= $(srctree)/drivers/mtk-vendor
+LINUXINCLUDE := -I$(DEVICE_MODULES_PATH)/include $(LINUXINCLUDE)
+ccflags-y += -I$(DEVICE_MODULES_PATH)/drivers/clk/mediatek \
+	     -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/include
+obj-$(CONFIG_DEVICE_MODULES_MTK_SCPSYS) += mtk-scpsys.o mtk-scpsys-mt6768.o

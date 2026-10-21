@@ -36,4 +36,15 @@ config DEVICE_MODULES_MTK_IOMMU
 	select IOMMU_API
 	select IOMMU_IO_PGTABLE_ARMV7S
 
+config DEVICE_MODULES_MTK_SCPSYS
+	bool "MediaTek vendor scpsys power domains (legacy MT6768 binding)"
+	depends on ARCH_MEDIATEK
+	select PM_GENERIC_DOMAINS
+	select REGMAP
+	default FIRE_MTK_VENDOR_DRM
+	help
+	  The stock fire device tree describes power domains with the old
+	  "mediatek,mt6768-scpsys" binding, which the upstream drivers do
+	  not handle. Display, SMI and GCE wait for it.
+
 endmenu

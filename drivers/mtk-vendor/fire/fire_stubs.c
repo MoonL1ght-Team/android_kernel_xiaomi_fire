@@ -14,6 +14,7 @@
 
 #include "mtk-mml-drm-adaptor.h"
 #include "clk-fmeter.h"
+#include "clkchk.h"
 #include "mtk-mmdvfs-debug.h"
 #include <soc/mediatek/dramc.h>
 #include <soc/mediatek/smi.h>
@@ -124,3 +125,5 @@ int dma_buf_get_gid(struct dma_buf *dmabuf)
 {
 	return -EOPNOTSUPP;
 }
+
+void clkchk_external_dump(void) { }
