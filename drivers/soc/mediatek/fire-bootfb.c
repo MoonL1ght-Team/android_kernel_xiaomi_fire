@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Xiaomi fire: hand the bootloader framebuffer to simpledrm
+ * Xiaomi fire: hand the bootloader framebuffer to simplefb
  *
  * There is no MediaTek display driver on this kernel yet, but LK leaves
  * the panel running in video mode, scanning out a framebuffer through
  * the OVL engine. Read the first enabled OVL layer back from the
  * hardware and register a "simple-framebuffer" device for exactly that
- * buffer, so simpledrm and fbcon can draw on the screen.
+ * buffer, so simplefb and fbcon can draw on the screen.
+ *
+ * Android's SELinux policy hides the kernel log from adb shell, so the
+ * values read from each OVL are also exposed as the name of an empty
+ * platform device, visible with "ls /sys/bus/platform/devices".
  */
 
 #include <linux/bitfield.h>
@@ -32,6 +36,30 @@
 /* disp_ovl0 and disp_ovl0_2l */
 static const phys_addr_t fire_ovl_bases[] = { 0x1400b000, 0x1400c000 };
 
+#define RDMA0_BASE		0x1400d000
+#define RDMA_GLOBAL_CON		0x0010
+#define RDMA_SIZE_CON_0		0x0014
+#define RDMA_SIZE_CON_1		0x0018
+#define RDMA_MEM_CON		0x0024
+#define RDMA_MEM_SRC_PITCH	0x002c
+#define RDMA_MEM_START_ADDR	0x0f00
+
+static void __init fire_bootfb_report_rdma(void)
+{
+	void __iomem *regs = ioremap(RDMA0_BASE, OVL_REG_SIZE);
+	char name[96];
+
+	if (!regs)
+		return;
+	snprintf(name, sizeof(name), "rdinfo-g%x-w%x-h%x-m%x-p%x-a%x",
+		 readl(regs + RDMA_GLOBAL_CON), readl(regs + RDMA_SIZE_CON_0),
+		 readl(regs + RDMA_SIZE_CON_1), readl(regs + RDMA_MEM_CON),
+		 readl(regs + RDMA_MEM_SRC_PITCH),
+		 readl(regs + RDMA_MEM_START_ADDR));
+	iounmap(regs);
+	platform_device_register_simple(name, PLATFORM_DEVID_NONE, NULL, 0);
+}
+
 static const char *fire_bootfb_format(u32 con, u32 *bpp)
 {
 	bool byte_swap = con & OVL_CON_BYTE_SWAP;
@@ -56,7 +84,19 @@ static const char *fire_bootfb_format(u32 con, u32 *bpp)
 	}
 }
 
-static int __init fire_bootfb_probe_ovl(phys_addr_t base)
+static void __init fire_bootfb_report(int idx, u32 src_con, int layer,
+				      u32 size, u32 pitch, u32 con, u32 addr)
+{
+	char name[96];
+
+	snprintf(name, sizeof(name),
+		 "fbinfo-%d-sc%x-l%d-%ux%u-p%u-c%08x-a%08x", idx, src_con,
+		 layer, size & 0x1fff, (size >> 16) & 0x1fff, pitch, con, addr);
+	platform_device_register_simple(name, PLATFORM_DEVID_NONE, NULL, 0);
+}
+
+static int __init fire_bootfb_probe_ovl(int idx, phys_addr_t base,
+					bool register_fb)
 {
 	struct simplefb_platform_data pdata = {};
 	struct platform_device *pdev;
@@ -75,6 +115,7 @@ static int __init fire_bootfb_probe_ovl(phys_addr_t base)
 			break;
 	if (layer == OVL_LAYERS) {
 		iounmap(regs);
+		fire_bootfb_report(idx, src_con, -1, 0, 0, 0, 0);
 		return -ENODEV;
 	}
 
@@ -83,6 +124,7 @@ static int __init fire_bootfb_probe_ovl(phys_addr_t base)
 	pitch = readl(regs + OVL_PITCH(layer)) & 0xffff;
 	addr = readl(regs + OVL_ADDR(layer));
 	iounmap(regs);
+	fire_bootfb_report(idx, src_con, layer, size, pitch, con, addr);
 
 	pdata.width = size & 0x1fff;
 	pdata.height = (size >> 16) & 0x1fff;
@@ -95,6 +137,8 @@ static int __init fire_bootfb_probe_ovl(phys_addr_t base)
 	if (!pdata.format || !addr || !pdata.width || !pdata.height ||
 	    pitch < pdata.width * bpp)
 		return -EINVAL;
+	if (!register_fb)
+		return 0;
 
 	res.start = addr;
 	res.end = addr + (resource_size_t)pitch * pdata.height - 1;
@@ -111,13 +155,16 @@ static int __init fire_bootfb_probe_ovl(phys_addr_t base)
 
 static int __init fire_bootfb_init(void)
 {
+	bool found = false;
 	int i;
 
+	fire_bootfb_report_rdma();
 	for (i = 0; i < ARRAY_SIZE(fire_ovl_bases); i++)
-		if (!fire_bootfb_probe_ovl(fire_ovl_bases[i]))
-			return 0;
+		if (!fire_bootfb_probe_ovl(i, fire_ovl_bases[i], !found))
+			found = true;
 
-	pr_warn("fire-bootfb: no active OVL layer found\n");
+	if (!found)
+		pr_warn("fire-bootfb: no active OVL layer found\n");
 	return 0;
 }
 device_initcall(fire_bootfb_init);
