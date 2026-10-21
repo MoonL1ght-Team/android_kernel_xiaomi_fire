@@ -15,7 +15,9 @@
  * mtkclient. The timers are armed from core_initcall so they still fire
  * if a driver hangs probing.
  *
- * Layout at FIRE_KMSG_OFFSET: "FIREKMSG", __le32 length, log text.
+ * Layout at FIRE_KMSG_OFFSET: "FIREKMSG", __le32 length, console log;
+ * FIRE_PMSG_SLOT bytes later: "FIREPMSG", __le32 length, raw pmsg
+ * (Android userspace log) records.
  */
 
 #include <linux/blkdev.h>
@@ -35,6 +37,8 @@
 #define FIRE_KMSG_SIZE		(2 << 20)
 #define FIRE_KMSG_HDR		12
 #define FIRE_PSTORE_CONSOLE	"console-ramoops-0"
+#define FIRE_PSTORE_PMSG	"pmsg-ramoops-0"
+#define FIRE_PMSG_SLOT		(1 << 20)
 #define FIRE_SAVE_RETRIES	20
 
 static unsigned int delay;
@@ -53,8 +57,8 @@ static int fire_match_part(struct device *dev, const void *name)
 	       !strcmp(bdev->bd_meta_info->volname, name);
 }
 
-/* Read the previous boot's console log from pstore into buf. */
-static ssize_t fire_read_prev_log(char *buf, size_t size)
+/* Read a record of the previous boot from pstore into buf. */
+static ssize_t fire_read_prev_log(const char *name, char *buf, size_t size)
 {
 	struct file_system_type *type;
 	struct vfsmount *mnt;
@@ -70,7 +74,7 @@ static ssize_t fire_read_prev_log(char *buf, size_t size)
 	if (IS_ERR(mnt))
 		return PTR_ERR(mnt);
 
-	file = file_open_root_mnt(mnt, FIRE_PSTORE_CONSOLE, O_RDONLY, 0);
+	file = file_open_root_mnt(mnt, name, O_RDONLY, 0);
 	if (IS_ERR(file)) {
 		len = PTR_ERR(file);
 		goto unmount;
@@ -113,7 +117,7 @@ static void fire_save_prev_fn(struct work_struct *work)
 {
 	static unsigned int tries;
 	struct device *dev;
-	ssize_t len;
+	ssize_t len, plen;
 	char *buf;
 	int ret;
 
@@ -133,19 +137,24 @@ static void fire_save_prev_fn(struct work_struct *work)
 	if (!buf)
 		goto put_dev;
 
-	len = fire_read_prev_log(buf + FIRE_KMSG_HDR,
-				 FIRE_KMSG_SIZE - FIRE_KMSG_HDR);
-	if (len < 0) {
-		pr_err("fire-debug-reboot: no previous log: %zd\n", len);
-		goto free_buf;
-	}
+	len = fire_read_prev_log(FIRE_PSTORE_CONSOLE, buf + FIRE_KMSG_HDR,
+				 FIRE_PMSG_SLOT - FIRE_KMSG_HDR);
+	if (len < 0)
+		len = 0;
 	memcpy(buf, "FIREKMSG", 8);
 	put_unaligned_le32(len, buf + 8);
 
+	plen = fire_read_prev_log(FIRE_PSTORE_PMSG,
+				  buf + FIRE_PMSG_SLOT + FIRE_KMSG_HDR,
+				  FIRE_KMSG_SIZE - FIRE_PMSG_SLOT - FIRE_KMSG_HDR);
+	if (plen < 0)
+		plen = 0;
+	memcpy(buf + FIRE_PMSG_SLOT, "FIREPMSG", 8);
+	put_unaligned_le32(plen, buf + FIRE_PMSG_SLOT + 8);
+
 	ret = fire_write_expdb(dev, buf);
-	pr_info("fire-debug-reboot: saved %zd bytes of previous log to %s: %d\n",
-		len, FIRE_KMSG_PART, ret);
-free_buf:
+	pr_info("fire-debug-reboot: saved %zd + %zd bytes of previous log to %s: %d\n",
+		len, plen, FIRE_KMSG_PART, ret);
 	vfree(buf);
 put_dev:
 	put_device(dev);
