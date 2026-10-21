@@ -34,6 +34,14 @@ config MTK_DVFSRC_STUB
 	  referencing it through "dvfsrc-vcore-supply" (such as the MSDC
 	  hosts in the vendor device tree) are not held back by fw_devlink.
 
+config FIRE_DEBUG_REBOOT
+	bool "Xiaomi fire bring-up delayed warm reboot"
+	depends on ARCH_MEDIATEK || COMPILE_TEST
+	help
+	  Warm-reboot after fire_debug_reboot.delay seconds so the bootloader
+	  can save the kernel log to expdb. Does nothing unless the
+	  parameter is set on the command line.
+
 config MTK_INFRACFG
 	tristate "MediaTek INFRACFG Support"
 	select REGMAP
