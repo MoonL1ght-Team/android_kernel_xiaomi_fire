@@ -8,6 +8,8 @@
  * from the eMMC RPMB partition. Implement that interface on top of the
  * RPMB subsystem, which the mmc block driver registers with.
  *
+ * Commands are 5..9, or 85..89 for newer daemons.
+ *
  * Ioctl argument for the frame commands: __u32 size, then size bytes of
  * 512-byte RPMB frames. Results are copied back in place: the response
  * frame replaces the first frame for writes and key programming, and
@@ -35,6 +37,8 @@
 #define MTK_RPMB_SOTER_GET_CNT		7
 #define MTK_RPMB_SOTER_GET_WR_SIZE	8
 #define MTK_RPMB_SOTER_SET_KEY		9
+/* Newer teei_daemon builds use the same commands offset by 80 (85..89). */
+#define MTK_RPMB_SOTER_NEW_OFFSET	80
 
 #define MTK_RPMB_REQ_GET_WRITE_COUNTER	0x2
 
@@ -183,6 +187,10 @@ static long mtk_rpmb_ioctl(struct file *file, unsigned int cmd,
 	struct mmc_card *card;
 	u32 val = 0;
 	long ret;
+
+	if (cmd >= MTK_RPMB_SOTER_WRITE_DATA + MTK_RPMB_SOTER_NEW_OFFSET &&
+	    cmd <= MTK_RPMB_SOTER_SET_KEY + MTK_RPMB_SOTER_NEW_OFFSET)
+		cmd -= MTK_RPMB_SOTER_NEW_OFFSET;
 
 	rdev = mtk_rpmb_get_dev();
 	if (!rdev)
