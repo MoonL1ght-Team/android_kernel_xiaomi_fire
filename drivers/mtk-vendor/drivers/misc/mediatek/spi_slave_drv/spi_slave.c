@@ -123,6 +123,10 @@ static int spislv_sync_sub(u32 addr, void *val, u32 len, bool is_read)
 	u8 mtk_spi_buffer[MTK_SPI_BUFSIZ];
 	u8 cmd_write_sta[2] = {CMD_WS, 0xff};
 	u8 status = 0;
+
+	/* fire: no MT6382 SPI device if the SPI controller did not probe */
+	if (!slv_data.spi)
+		return -ENODEV;
 	u32 retry = 0;
 	u8 cmd_config[9] = {0};
 	/* CR or CW */
@@ -284,6 +288,9 @@ int spislv_init(void)
 {
 	struct spi_message msg;
 	int ret = 0;
+
+	if (!slv_data.spi)
+		return -ENODEV;
 
 	spislv_chip_info.tick_delay = slv_data.low_speed_tick_delay;
 	slv_data.tx_speed_hz = SPI_TX_LOW_SPEED_HZ;
