@@ -439,7 +439,11 @@ static int fts_get_ic_information(struct fts_ts_data *ts_data)
     }
 
     if (cnt >= 3) {
-        FTS_ERROR("get ic informaton fail");
+        FTS_ERROR("get ic informaton fail: rst gpio %d=%d irq gpio %d=%d",
+                  ts_data->pdata->reset_gpio,
+                  gpio_get_value(ts_data->pdata->reset_gpio),
+                  ts_data->pdata->irq_gpio,
+                  gpio_get_value(ts_data->pdata->irq_gpio));
         return -EIO;
     }
 
@@ -2618,13 +2622,23 @@ extern int32_t fts_extra_proc_init(void);
 static struct delayed_work fts_late_probe_work;
 static bool fts_probed;
 
+#define FTS_LATE_PROBE_RETRIES	12
+#define FTS_LATE_PROBE_RETRY	(10 * HZ)
+
 static void fts_ts_late_probe(struct work_struct *work)
 {
+    static unsigned int tries;
     struct fts_ts_data *ts_data = fts_data;
     int ret;
 
     ret = fts_ts_probe_entry(ts_data);
     if (ret) {
+        FTS_ERROR("probe try %u fail", tries);
+        /* the panel is re-initialised once Android is up; try again */
+        if (++tries < FTS_LATE_PROBE_RETRIES) {
+            schedule_delayed_work(&fts_late_probe_work, FTS_LATE_PROBE_RETRY);
+            return;
+        }
         FTS_ERROR("Touch Screen(SPI BUS) driver probe fail");
         fts_data = NULL;
         kfree_safe(ts_data);
