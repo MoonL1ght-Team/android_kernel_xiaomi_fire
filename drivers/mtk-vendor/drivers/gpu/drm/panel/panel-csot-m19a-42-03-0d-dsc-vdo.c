@@ -259,12 +259,15 @@ static int lcm_enable(struct drm_panel *panel)
 	.vtotal = FRAME_HEIGHT + (_vfp) + VSA + VBP,		\
 }
 
-/* 60 Hz is the default; the order matches the stock module. */
+/* 60 Hz is the default, then 90 Hz, as in the stock module. */
 static const struct drm_display_mode lcm_modes[] = {
 	LCM_MODE(289321, 1248),		/* 60 Hz */
 	LCM_MODE(291178, 18),		/* 90 Hz */
-	LCM_MODE(290404, 2200),		/* 48 Hz */
-	LCM_MODE(289785, 3750),		/* 36 Hz */
+	/*
+	 * The stock 48 and 36 Hz modes are left out: switching to them makes
+	 * the hwcomposer blitter fail (wallpaper flicker) and the FT8725
+	 * touch, which scans in step with the panel, stop reporting.
+	 */
 };
 
 #define LCM_EXT_PARAMS(_vfp_low_power) {			\
@@ -329,8 +332,6 @@ static const struct drm_display_mode lcm_modes[] = {
 static struct mtk_panel_params ext_params[] = {
 	LCM_EXT_PARAMS(2200),
 	LCM_EXT_PARAMS(2200),
-	LCM_EXT_PARAMS(0),
-	LCM_EXT_PARAMS(0),
 };
 
 static_assert(ARRAY_SIZE(ext_params) == ARRAY_SIZE(lcm_modes));
