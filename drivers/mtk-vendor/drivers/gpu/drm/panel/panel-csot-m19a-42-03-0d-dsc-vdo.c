@@ -485,8 +485,13 @@ static int lcm_probe(struct mipi_dsi_device *dsi)
 		return dev_err_probe(dev, PTR_ERR(ctx->biasn_gpio),
 				     "cannot get biasn gpio\n");
 
-	ctx->prepared = true;
-	ctx->enabled = true;
+	/*
+	 * Re-initialise the panel on the first enable even though LK left it
+	 * running: the touch half of this TDDI only reports after a full
+	 * panel power sequence, as after a lock/unlock.
+	 */
+	ctx->prepared = false;
+	ctx->enabled = false;
 
 	drm_panel_init(&ctx->panel, dev, &lcm_drm_funcs, DRM_MODE_CONNECTOR_DSI);
 	drm_panel_add(&ctx->panel);
