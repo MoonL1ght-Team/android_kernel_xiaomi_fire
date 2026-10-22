@@ -87,4 +87,12 @@ config MTK_GPU_MT6768_SUPPORT
 config MTK_GPU_COMMON_DVFS_SUPPORT
 	def_bool FIRE_MTK_VENDOR_GPU
 
+config FIRE_TOUCHSCREEN_FT8720
+	bool "FocalTech FT8720 touch (SPI) of the CSOT panels"
+	depends on SPI && INPUT_TOUCHSCREEN && FIRE_MTK_VENDOR_DRM
+	default y
+	help
+	  FocalTech FT8720 TDDI touch controller on SPI, used with the CSOT
+	  m19a 42-03-0b/0d panels (focaltech,fts in the stock DT).
+
 endmenu

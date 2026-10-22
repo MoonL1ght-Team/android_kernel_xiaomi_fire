@@ -64,7 +64,15 @@
 struct proc_dir_entry *fts_proc_touchscreen_dir;
 struct proc_dir_entry *fts_proc_ctp_openshort_test_file = NULL;
 struct proc_dir_entry *fts_proc_lockdown_info_file = NULL;
+#if FTS_TEST_EN
 extern int fts_test_entry(char *ini_file_name);
+#else
+/* fire 6.12: the focaltech_test MP test tool is not built */
+static int fts_test_entry(char *ini_file_name)
+{
+    return -ENODEV;
+}
+#endif
 int fts_factory_test(void);
 
 /*****************************************************************************
@@ -104,7 +112,7 @@ static ssize_t fts_debug_write(
     int writelen = 0;
     int ret = 0;
     char tmp[PROC_BUF_SIZE];
-    struct fts_ts_data *ts_data = PDE_DATA(file_inode(filp));
+    struct fts_ts_data *ts_data = pde_data(file_inode(filp));
     struct ftxxxx_proc *proc = &ts_data->proc;
 
     if (buflen < 1) {
@@ -264,7 +272,7 @@ static ssize_t fts_debug_read(
     int buflen = count;
     u8 *readbuf = NULL;
     u8 tmpbuf[PROC_BUF_SIZE] = { 0 };
-    struct fts_ts_data *ts_data = PDE_DATA(file_inode(filp));
+    struct fts_ts_data *ts_data = pde_data(file_inode(filp));
     struct ftxxxx_proc *proc = &ts_data->proc;
 
     if (buflen <= 0) {
@@ -589,7 +597,7 @@ proc_read_err:
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
 static int fts_ta_open(struct inode *inode, struct file *file)
 {
-    struct fts_ts_data *ts_data = PDE_DATA(inode);
+    struct fts_ts_data *ts_data = pde_data(inode);
 
     if (ts_data->touch_analysis_support) {
         FTS_INFO("fts_ta open");
@@ -604,7 +612,7 @@ static int fts_ta_open(struct inode *inode, struct file *file)
 
 static int fts_ta_release(struct inode *inode, struct file *file)
 {
-    struct fts_ts_data *ts_data = PDE_DATA(inode);
+    struct fts_ts_data *ts_data = pde_data(inode);
 
     if (ts_data->touch_analysis_support) {
         FTS_INFO("fts_ta close");
@@ -621,7 +629,7 @@ static ssize_t fts_ta_read(
     struct file *filp, char __user *buff, size_t count, loff_t *ppos)
 {
     int read_num = (int)count;
-    struct fts_ts_data *ts_data = PDE_DATA(file_inode(filp));
+    struct fts_ts_data *ts_data = pde_data(file_inode(filp));
 
     if (!ts_data->touch_analysis_support || !ts_data->ta_buf) {
         FTS_ERROR("touch_analysis is disabled, or ta_buf is NULL");
@@ -1477,7 +1485,7 @@ int fts_remove_sysfs(struct fts_ts_data *ts_data)
     return 0;
 }
 
-int fts_factory_test()
+int fts_factory_test(void)
 {
     int ret = 0;
     char fwname[FILE_NAME_LENGTH] = { "focaltech_ft8720_hx.ini" };
@@ -1535,11 +1543,11 @@ static int openshort_test_open(struct inode *inode, struct file *file)
     return single_open(file, openshort_test_proc_show, NULL);
 }
 
-static const struct file_operations fts_proc_ctp_openshort_test_fops = {
-    .open 	 = openshort_test_open,
-    .read 	 = seq_read,
-    .llseek	 = seq_lseek,
-    .release = single_release,
+static const struct proc_ops fts_proc_ctp_openshort_test_fops = {
+    .proc_open 	 = openshort_test_open,
+    .proc_read 	 = seq_read,
+    .proc_lseek	 = seq_lseek,
+    .proc_release = single_release,
 };
 
 static int fts_lockdown_info_proc_show(struct seq_file *m, void *v)
@@ -1553,11 +1561,11 @@ static int fts_lockdown_info_open(struct inode *inode, struct file *file)
     return single_open(file, fts_lockdown_info_proc_show, NULL);
 }
 
-static const struct file_operations fts_proc_lockdown_info_fops = {
-    .open 	 = fts_lockdown_info_open,
-    .read 	 = seq_read,
-    .llseek	 = seq_lseek,
-    .release = single_release,
+static const struct proc_ops fts_proc_lockdown_info_fops = {
+    .proc_open 	 = fts_lockdown_info_open,
+    .proc_read 	 = seq_read,
+    .proc_lseek	 = seq_lseek,
+    .proc_release = single_release,
 };
 
 int fts_proc_node_init(void)

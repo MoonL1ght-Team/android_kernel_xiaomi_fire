@@ -62,7 +62,8 @@
 #include <linux/kthread.h>
 #include <linux/dma-mapping.h>
 #include "focaltech_common.h"
-#include <linux/hardware_info.h>
+/* fire 6.12: no Xiaomi hardware_info module; keep the TP name locally */
+#define HARDWARE_MAX_ITEM_LONGTH	64
 #ifdef CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE
 #include "../xiaomi/xiaomi_touch.h"
 #endif
@@ -110,7 +111,8 @@
 #define FTS_MAX_TOUCH_BUF                   4096
 #define FTS_PSENSOR_ENABLE 1
 
-#define FTS_TP_DATA_DUMP_EN                     //create procfs /proc/tp_data_dump
+/* fire 6.12: the tp_data_dump source is not part of this drop */
+/* #define FTS_TP_DATA_DUMP_EN */
 /*****************************************************************************
 *  Alternative mode (When something goes wrong, the modules may be able to solve the problem.)
 *****************************************************************************/

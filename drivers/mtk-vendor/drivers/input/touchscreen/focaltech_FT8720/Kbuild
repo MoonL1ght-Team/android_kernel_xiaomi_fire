@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0
+# fire 6.12: FT8720 (SPI) touch of the CSOT 0b/0d panels, built in.
+DEVICE_MODULES_PATH ?= $(srctree)/drivers/mtk-vendor
+ccflags-y += -I$(src) -I$(DEVICE_MODULES_PATH)/include
+obj-$(CONFIG_FIRE_TOUCHSCREEN_FT8720) += fts_8720.o
+fts_8720-y := focaltech_core.o focaltech_ex_fun.o focaltech_ex_mode.o \
+	      focaltech_gesture.o focaltech_esdcheck.o \
+	      focaltech_point_report_check.o focaltech_proximity.o \
+	      focaltech_flash.o focaltech_spi.o

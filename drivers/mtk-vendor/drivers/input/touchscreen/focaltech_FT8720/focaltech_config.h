@@ -226,14 +226,14 @@
  * Host test enable
  * 1: enable, 0:disable(default)
  */
-#define FTS_TEST_EN                             1
+#define FTS_TEST_EN                             0
 
 /*
  * Pinctrl enable
  * default: disable
  */
 #define FTS_PINCTRL_EN                          0
-#define FTS_PSENSOR_EN                          1
+#define FTS_PSENSOR_EN                          0
 
 /*
  * Customer power enable

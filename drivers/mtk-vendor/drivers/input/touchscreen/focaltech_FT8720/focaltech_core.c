@@ -52,6 +52,7 @@
 #endif
 #include "focaltech_core.h"
 #include "tpd_notify.h"
+#include "../../../gpu/drm/mediatek/mediatek_v2/mtk_disp_notify.h"
 
 /*****************************************************************************
 * Private constant and macro definitions using #define
@@ -94,6 +95,7 @@ struct notifier_block fts_psenable_nb;
 *****************************************************************************/
 struct fts_ts_data *fts_data;
 int tp_sensor_flag;
+char Tp_name[HARDWARE_MAX_ITEM_LONGTH];
 bool gesture_support;
 
 /*****************************************************************************
@@ -979,7 +981,9 @@ static int fts_irq_read_report(struct fts_ts_data *ts_data)
         FTS_INFO("unknown touch event(%d)", touch_etype);
         break;
     }
+#ifdef CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE
     enter_palm_mode(ts_data);
+#endif
 
     return 0;
 }
@@ -1080,6 +1084,7 @@ static int fts_input_pen_init(struct fts_ts_data *ts_data)
 }
 #endif
 
+#ifdef CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE
 int enter_palm_mode(struct fts_ts_data *data)
 {
 	u8 mode0 = 0;
@@ -1095,6 +1100,7 @@ int enter_palm_mode(struct fts_ts_data *data)
 	}
 	return 0;
 }
+#endif
 
 static int fts_input_init(struct fts_ts_data *ts_data)
 {
@@ -1585,13 +1591,11 @@ static int fts_parse_dt(struct device *dev, struct fts_ts_platform_data *pdata)
     }
 
     /* reset, irq gpio info */
-    pdata->reset_gpio = of_get_named_gpio_flags(np, "focaltech,reset-gpio",
-                        0, &pdata->reset_gpio_flags);
+    pdata->reset_gpio = of_get_named_gpio(np, "focaltech,reset-gpio", 0);
     if (pdata->reset_gpio < 0)
         FTS_ERROR("Unable to get reset_gpio");
 
-    pdata->irq_gpio = of_get_named_gpio_flags(np, "focaltech,irq-gpio",
-                      0, &pdata->irq_gpio_flags);
+    pdata->irq_gpio = of_get_named_gpio(np, "focaltech,irq-gpio", 0);
     if (pdata->irq_gpio < 0)
         FTS_ERROR("Unable to get irq_gpio");
 
@@ -1646,45 +1650,30 @@ static void fts_resume_work(struct work_struct *work)
     fts_ts_resume(ts_data->dev);
 }
 
-#if defined(CONFIG_FB)
+#if 1
+/* fire 6.12: follow the panel through the mediatek_v2 display notifier */
 static int fb_notifier_callback(struct notifier_block *self,
                                 unsigned long event, void *data)
 {
-    struct fb_event *evdata = data;
-    int *blank = NULL;
-   //struct fts_ts_data *ts_data = container_of(self, struct fts_ts_data,
-     //                             fb_notif);
+    int *blank = data;
 
-    if (!evdata) {
-        FTS_ERROR("evdata is null");
+    if (!blank || !(event == MTK_DISP_EARLY_EVENT_BLANK ||
+                    event == MTK_DISP_EVENT_BLANK))
         return 0;
-    }
 
-    if (!(event == FB_EARLY_EVENT_BLANK || event == FB_EVENT_BLANK)) {
-        FTS_INFO("event(%lu) do not need process\n", event);
-        return 0;
-    }
-
-    blank = evdata->data;
-    FTS_INFO("FB event:%lu,blank:%d", event, *blank);
+    FTS_INFO("disp event:%lu,blank:%d", event, *blank);
     switch (*blank) {
-    case FB_BLANK_UNBLANK:
-        if (FB_EARLY_EVENT_BLANK == event) {
-            FTS_INFO("resume: event = %lu, not care\n", event);
-        } else if (FB_EVENT_BLANK == event) {
-            //queue_work(fts_data->ts_workqueue, &fts_data->resume_work);
-        }
+    case MTK_DISP_BLANK_UNBLANK:
+        if (event == MTK_DISP_EVENT_BLANK)
+            queue_work(fts_data->ts_workqueue, &fts_data->resume_work);
         break;
-    case FB_BLANK_POWERDOWN:
-        if (FB_EARLY_EVENT_BLANK == event) {
+    case MTK_DISP_BLANK_POWERDOWN:
+        if (event == MTK_DISP_EARLY_EVENT_BLANK) {
             cancel_work_sync(&fts_data->resume_work);
-           // fts_ts_suspend(ts_data->dev);
-        } else if (FB_EVENT_BLANK == event) {
-            FTS_INFO("suspend: event = %lu, not care\n", event);
+            fts_ts_suspend(fts_data->dev);
         }
         break;
     default:
-        FTS_INFO("FB BLANK(%d) do not need process\n", *blank);
         break;
     }
 
@@ -1849,14 +1838,7 @@ static int fts_ts_probe_entry(struct fts_ts_data *ts_data)
         if (ret)
             FTS_ERROR("device-tree parse fail");
 
-#if defined(CONFIG_DRM)
-#if defined(CONFIG_DRM_PANEL)
-        ret = drm_check_dt(ts_data->dev->of_node);
-        if (ret) {
-            FTS_ERROR("parse drm-panel fail");
-        }
-#endif
-#endif
+
     } else {
         if (ts_data->dev->platform_data) {
             memcpy(ts_data->pdata, ts_data->dev->platform_data, pdata_size);
@@ -1987,11 +1969,11 @@ static int fts_ts_probe_entry(struct fts_ts_data *ts_data)
     ts_data->pm_suspend = false;
 #endif
 
-#if defined(CONFIG_FB)
+#if 1
     ts_data->fb_notif.notifier_call = fb_notifier_callback;
-    ret = fb_register_client(&ts_data->fb_notif);
+    ret = mtk_disp_notifier_register("fts_8720", &ts_data->fb_notif);
     if (ret) {
-        FTS_ERROR("[FB]Unable to register fb_notifier: %d", ret);
+        FTS_ERROR("[DISP]Unable to register disp notifier: %d", ret);
     }
 #elif defined(CONFIG_DRM)
     ts_data->fb_notif.notifier_call = drm_notifier_callback;
@@ -2077,9 +2059,9 @@ err_register_charger_nofif_failed:
 #ifdef FTS_TP_DATA_DUMP_EN
 err_fts_tp_data_dump_proc_init_failed:
 	fts_tp_data_dump_proc_exit();
+#endif
 	FTS_FUNC_EXIT();
 	return ret;
-#endif
 }
 
 static int fts_ts_remove_entry(struct fts_ts_data *ts_data)
@@ -2114,9 +2096,9 @@ static int fts_ts_remove_entry(struct fts_ts_data *ts_data)
     if (ts_data->ts_workqueue)
         destroy_workqueue(ts_data->ts_workqueue);
 
-#if defined(CONFIG_FB)
-    if (fb_unregister_client(&ts_data->fb_notif))
-        FTS_ERROR("[FB]Error occurred while unregistering fb_notifier.");
+#if 1
+    if (mtk_disp_notifier_unregister(&ts_data->fb_notif))
+        FTS_ERROR("[DISP]Error occurred while unregistering disp notifier.");
 #elif defined(CONFIG_DRM)
 #if defined(CONFIG_DRM_PANEL)
     if (active_panel)
@@ -2679,9 +2661,9 @@ static int fts_ts_probe(struct spi_device *spi)
     return 0;
 }
 
-static int fts_ts_remove(struct spi_device *spi)
+static void fts_ts_remove(struct spi_device *spi)
 {
-    return fts_ts_remove_entry(spi_get_drvdata(spi));
+    fts_ts_remove_entry(spi_get_drvdata(spi));
 }
 
 static const struct spi_device_id fts_ts_id[] = {
@@ -2707,22 +2689,10 @@ static struct spi_driver fts_ts_driver = {
     },
     .id_table = fts_ts_id,
 };
-extern char mtkfb_lcm_name[256];
 static int __init fts_ts_init(void)
 {
     int ret = 0;
 
-    
-    if (IS_ERR_OR_NULL(mtkfb_lcm_name)){
-        FTS_ERROR("mtkfb_lcm_name ERROR!\n");
-    } else {
-        if (strcmp(mtkfb_lcm_name,"dsi_panel_m19a_42_03_0b_dsc_vdo_lcm_drv") == 0) {
-            FTS_ERROR("TP name: %s\n", mtkfb_lcm_name);
-        } else {
-            FTS_ERROR("Unknow Touch\n");
-            FTS_ERROR("TP name: %s\n", mtkfb_lcm_name);
-        }
-    }
 #if FTS_PSENSOR_EN
     fts_proximity_init();
 #endif
