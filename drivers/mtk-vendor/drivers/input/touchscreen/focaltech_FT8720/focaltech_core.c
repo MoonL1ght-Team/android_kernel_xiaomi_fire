@@ -103,6 +103,7 @@ bool gesture_support;
 *****************************************************************************/
 static int fts_ts_suspend(struct device *dev);
 static int fts_ts_resume(struct device *dev);
+void fts_fwresume_work(void);
 extern int fts_proc_node_init(void);
 extern int fts_enter_proximity_mode(int mode);
 
@@ -1668,8 +1669,15 @@ static int fb_notifier_callback(struct notifier_block *self,
     FTS_INFO("disp event:%lu,blank:%d", event, *blank);
     switch (*blank) {
     case MTK_DISP_BLANK_UNBLANK:
-        if (event == MTK_DISP_EVENT_BLANK)
+        /*
+         * The flashless FT8725 loses its firmware whenever the panel is
+         * powered down; reload it before resuming, as the 4.19 LCM
+         * driver did with fts_fwresume_work() + fts_resume().
+         */
+        if (event == MTK_DISP_EVENT_BLANK) {
+            fts_fwresume_work();
             queue_work(fts_data->ts_workqueue, &fts_data->resume_work);
+        }
         break;
     case MTK_DISP_BLANK_POWERDOWN:
         if (event == MTK_DISP_EARLY_EVENT_BLANK) {

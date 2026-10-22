@@ -1299,6 +1299,8 @@ static void fts_fwupg_work(struct work_struct *work)
         FTS_INFO("read chip id:0x%02x", chip_id);
         ret = fts_read_reg(FTS_REG_FW_VER, &fw_version);
 	FTS_INFO("read FW version:0x%02x", fw_version);
+        /* fts_fwupg_init() switched the ESD check off; nothing else does */
+        fts_esdcheck_switch(upg->ts_data, ENABLE);
 	sprintf(tp_version_info, "[Vendor]Huaxing [TP-IC]:FT8720, [FW]0x%x\n", fw_version);
     }
 }
