@@ -15,6 +15,9 @@
  * mtkclient. The timers are armed from core_initcall so they still fire
  * if a driver hangs probing.
  *
+ * fire_debug_reboot.nosuspend=1 holds a wakeup source forever: system
+ * suspend resets the SoC until the SPM low power firmware is set up.
+ *
  * Layout at FIRE_KMSG_OFFSET: "FIREKMSG", __le32 length, console log;
  * FIRE_PMSG_SLOT bytes later: "FIREPMSG", __le32 length, raw pmsg
  * (Android userspace log) records.
@@ -27,6 +30,7 @@
 #include <linux/module.h>
 #include <linux/mount.h>
 #include <linux/panic.h>
+#include <linux/pm_wakeup.h>
 #include <linux/string.h>
 #include <linux/unaligned.h>
 #include <linux/vmalloc.h>
@@ -48,6 +52,10 @@ MODULE_PARM_DESC(delay, "Seconds after boot before a deliberate panic (0 = off)"
 static bool save_prev;
 module_param(save_prev, bool, 0444);
 MODULE_PARM_DESC(save_prev, "Copy the previous boot's ramoops console log to expdb");
+
+static bool nosuspend;
+module_param(nosuspend, bool, 0444);
+MODULE_PARM_DESC(nosuspend, "Keep the system from suspending");
 
 static int fire_match_part(struct device *dev, const void *name)
 {
@@ -180,6 +188,21 @@ static int __init fire_debug_reboot_init(void)
 	return 0;
 }
 core_initcall(fire_debug_reboot_init);
+
+/* After the wakeup source class exists */
+static int __init fire_nosuspend_init(void)
+{
+	struct wakeup_source *ws;
+
+	if (!nosuspend)
+		return 0;
+	ws = wakeup_source_register(NULL, "fire-nosuspend");
+	if (!ws)
+		return -ENOMEM;
+	__pm_stay_awake(ws);
+	return 0;
+}
+late_initcall(fire_nosuspend_init);
 
 MODULE_DESCRIPTION("Xiaomi fire bring-up log keeper");
 MODULE_LICENSE("GPL");
