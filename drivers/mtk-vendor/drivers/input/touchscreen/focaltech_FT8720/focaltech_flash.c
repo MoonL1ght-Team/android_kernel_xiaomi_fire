@@ -916,6 +916,7 @@ int fts_enter_test_environment(bool test_state)
 static int fts_fw_resume(bool need_reset, enum FW_TYPE fw_type)
 {
     int ret = 0;
+    int i;
     struct fts_upgrade *upg = fwupgrade;
     const struct firmware *fw = NULL;
     char fwname[FILE_NAME_LENGTH] = { 0 };
@@ -969,7 +970,16 @@ static int fts_fw_resume(bool need_reset, enum FW_TYPE fw_type)
     }
 
 
-    ret = fts_fw_download(fw_buf + app_off, fwlen - app_off, need_reset);
+    /*
+     * fire: the first download after a reset reliably fails its ECC
+     * check on the FT8725; the next one passes.
+     */
+    for (i = 0; i < 3; i++) {
+        ret = fts_fw_download(fw_buf + app_off, fwlen - app_off, need_reset);
+        pr_err("fts-dl resume try %d: %d\n", i, ret);
+        if (ret >= 0)
+            break;
+    }
     if (ret < 0) {
         FTS_ERROR("fw resume download failed");
     }
