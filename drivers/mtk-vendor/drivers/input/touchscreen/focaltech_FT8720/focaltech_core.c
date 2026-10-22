@@ -2181,6 +2181,8 @@ static int fts_ts_suspend(struct device *dev)
     int ret = 0;
     struct fts_ts_data *ts_data = fts_data;
 
+    pr_err("fire-touch suspend (suspended=%d)\n", ts_data->suspended);
+
     FTS_FUNC_ENTER();
     if (ts_data->suspended) {
         FTS_INFO("Already in suspend state");
@@ -2251,6 +2253,8 @@ static int fts_ts_suspend(struct device *dev)
 static int fts_ts_resume(struct device *dev)
 {
     struct fts_ts_data *ts_data = fts_data;
+
+    pr_err("fire-touch resume (suspended=%d)\n", ts_data->suspended);
 
     FTS_FUNC_ENTER();
     if (!ts_data->suspended) {

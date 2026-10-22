@@ -179,6 +179,8 @@ static int lcm_unprepare(struct drm_panel *panel)
 {
 	struct lcm *ctx = panel_to_lcm(panel);
 
+	pr_err("fire-panel unprepare (prepared=%d)\n", ctx->prepared);
+
 	if (!ctx->prepared)
 		return 0;
 
@@ -207,6 +209,7 @@ static int lcm_prepare(struct drm_panel *panel)
 	struct lcm *ctx = panel_to_lcm(panel);
 	int ret;
 
+	pr_err("fire-panel prepare (prepared=%d)\n", ctx->prepared);
 	if (ctx->prepared)
 		return 0;
 
