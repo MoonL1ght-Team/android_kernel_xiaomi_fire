@@ -47,4 +47,12 @@ config DEVICE_MODULES_MTK_SCPSYS
 	  "mediatek,mt6768-scpsys" binding, which the upstream drivers do
 	  not handle. Display, SMI and GCE wait for it.
 
+config MTK_MT6382_BDG
+	bool "MT6382 display bridge (DSC) used on fire"
+	depends on FIRE_MTK_VENDOR_DRM && SPI
+	default y
+	help
+	  fire routes DSI through an MT6382 bridge that compresses frames with
+	  VESA DSC; it is configured over SPI.
+
 endmenu

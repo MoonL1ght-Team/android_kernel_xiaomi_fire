@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
+DEVICE_MODULES_PATH ?= $(srctree)/drivers/mtk-vendor
+LINUXINCLUDE := -I$(DEVICE_MODULES_PATH)/include $(LINUXINCLUDE)
+obj-$(CONFIG_MTK_MT6382_BDG) += spi_slave.o

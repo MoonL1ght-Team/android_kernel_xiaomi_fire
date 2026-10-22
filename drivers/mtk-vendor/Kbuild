@@ -10,3 +10,5 @@ obj-$(CONFIG_MTK_CMDQ_MBOX_EXT) += drivers/misc/mediatek/cmdq/mailbox/
 obj-$(CONFIG_DEVICE_MODULES_MTK_SMI) += drivers/memory/
 obj-$(CONFIG_DEVICE_MODULES_MTK_IOMMU) += drivers/iommu/
 obj-$(CONFIG_DEVICE_MODULES_MTK_SCPSYS) += drivers/soc/mediatek/
+obj-$(CONFIG_MTK_MT6382_BDG) += drivers/misc/mediatek/spi_slave_drv/
+obj-$(CONFIG_MTK_MT6382_BDG) += drivers/misc/mediatek/cmdq/bridge/

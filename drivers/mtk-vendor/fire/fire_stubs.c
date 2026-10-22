@@ -15,6 +15,7 @@
 #include "mtk-mml-drm-adaptor.h"
 #include "clk-fmeter.h"
 #include "clkchk.h"
+#include "clkbuf-ctrl.h"
 #include "mtk-mmdvfs-debug.h"
 #include <soc/mediatek/dramc.h>
 #include <soc/mediatek/smi.h>
@@ -127,3 +128,12 @@ int dma_buf_get_gid(struct dma_buf *dmabuf)
 }
 
 void clkchk_external_dump(void) { }
+
+/*
+ * MT6382 bridge XO: LK leaves it enabled for the boot logo. Without the
+ * clkbuf driver keep it as is (on) instead of toggling it.
+ */
+int clkbuf_xo_ctrl(char *cmd, int xo_id, u32 input)
+{
+	return 0;
+}
