@@ -225,8 +225,8 @@ int fts_write(u8 *writebuf, u32 writelen)
         }
     }
     if (ret < 0) {
-        FTS_ERROR("data write(addr:%x) fail,status:%x,ret:%d",
-                  writebuf[0], rxbuf[3], ret);
+        FTS_ERROR("data write(addr:%x) fail,status:%x,ret:%d rx:%*ph",
+                  writebuf[0], rxbuf[3], ret, min_t(int, txlen, 8), rxbuf);
     }
 
 err_write:

@@ -2609,6 +2609,43 @@ extern int32_t fts_extra_proc_init(void);
 /*****************************************************************************
 * TP Driver
 *****************************************************************************/
+/*
+ * fire 6.12: the stock module probes late, after the display stack; at
+ * 0.5 s the FT8720 does not answer on SPI. Run the probe from a delayed
+ * work once the panel is up.
+ */
+#define FTS_LATE_PROBE_DELAY	(15 * HZ)
+static struct delayed_work fts_late_probe_work;
+static bool fts_probed;
+
+static void fts_ts_late_probe(struct work_struct *work)
+{
+    struct fts_ts_data *ts_data = fts_data;
+    int ret;
+
+    ret = fts_ts_probe_entry(ts_data);
+    if (ret) {
+        FTS_ERROR("Touch Screen(SPI BUS) driver probe fail");
+        fts_data = NULL;
+        kfree_safe(ts_data);
+        return;
+    }
+    fts_probed = true;
+
+    fts_extra_proc_init();
+    ret = fts_register_psenable_callback();
+    if (ret) {
+        pr_err("jyx %s fail ret = %d\n", __func__, ret);
+    }
+    ret = tpd_register_psenable_callback();
+    if (ret) {
+        pr_err("jyx %s fail ret = %d\n", __func__, ret);
+    }
+
+    FTS_INFO("spi->max_speed_hz = %d\n", ts_data->spi->max_speed_hz);
+    FTS_INFO("Touch Screen(SPI BUS) driver prboe successfully");
+}
+
 static int fts_ts_probe(struct spi_device *spi)
 {
     int ret = 0;
@@ -2639,31 +2676,16 @@ static int fts_ts_probe(struct spi_device *spi)
     ts_data->bus_type = BUS_TYPE_SPI_V2;
     spi_set_drvdata(spi, ts_data);
 
-    ret = fts_ts_probe_entry(ts_data);
-    if (ret) {
-        FTS_ERROR("Touch Screen(SPI BUS) driver probe fail");
-        kfree_safe(ts_data);
-        return ret;
-    }
-
-    fts_extra_proc_init();
-    ret = fts_register_psenable_callback();
-    if (ret) {
-        pr_err("jyx %s fail ret = %d\n", __func__, ret);	
-    }
-    ret = tpd_register_psenable_callback();
-    if (ret) {
-        pr_err("jyx %s fail ret = %d\n", __func__, ret);
-    }
-
-    FTS_INFO("spi->max_speed_hz = %d\n", spi->max_speed_hz);
-    FTS_INFO("Touch Screen(SPI BUS) driver prboe successfully");
+    INIT_DELAYED_WORK(&fts_late_probe_work, fts_ts_late_probe);
+    schedule_delayed_work(&fts_late_probe_work, FTS_LATE_PROBE_DELAY);
     return 0;
 }
 
 static void fts_ts_remove(struct spi_device *spi)
 {
-    fts_ts_remove_entry(spi_get_drvdata(spi));
+    cancel_delayed_work_sync(&fts_late_probe_work);
+    if (fts_probed)
+        fts_ts_remove_entry(spi_get_drvdata(spi));
 }
 
 static const struct spi_device_id fts_ts_id[] = {
