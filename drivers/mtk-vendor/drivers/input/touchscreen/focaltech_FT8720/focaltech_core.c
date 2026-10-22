@@ -50,6 +50,7 @@
 #include <linux/earlysuspend.h>
 #define FTS_SUSPEND_LEVEL 1     /* Early-suspend level */
 #endif
+#include <linux/platform_data/spi-mt65xx.h>
 #include "focaltech_core.h"
 #include "tpd_notify.h"
 #include "../../../gpu/drm/mediatek/mediatek_v2/mtk_disp_notify.h"
@@ -2622,6 +2623,58 @@ extern int32_t fts_extra_proc_init(void);
 static struct delayed_work fts_late_probe_work;
 static bool fts_probed;
 
+/*
+ * fire bring-up: reads from the FT8725 fail their CRC now and then in
+ * every setting tried so far. Once the firmware runs, read the chip id
+ * register 20 times in each SPI mode / sample edge / tick delay / speed
+ * combination, log the success count as fts-rate and keep the best.
+ */
+static struct mtk_chip_config fts_rate_conf;
+
+static void fts_spi_rate_test(struct fts_ts_data *ts_data)
+{
+    static const u32 speeds[] = { 1000000, 4800000, 9600000 };
+    struct spi_device *spi = ts_data->spi;
+    u32 mode, sample, tick, sp, i;
+    u32 best_ok = 0, best = 0, n = 0;
+    u8 val;
+
+    for (sp = 0; sp < ARRAY_SIZE(speeds); sp++)
+    for (mode = 0; mode < 4; mode++)
+    for (sample = 0; sample < 2; sample++)
+    for (tick = 0; tick < 4; tick++, n++) {
+        u32 ok = 0;
+
+        fts_rate_conf.sample_sel = sample;
+        fts_rate_conf.tick_delay = tick;
+        spi->controller_data = &fts_rate_conf;
+        spi->mode = mode;
+        spi->max_speed_hz = speeds[sp];
+        spi_setup(spi);
+        for (i = 0; i < 20; i++)
+            if (!fts_read_reg(FTS_REG_CHIP_ID, &val) && val == 0x87)
+                ok++;
+        pr_err("fts-rate mode%u sample%u tick%u %ukHz ok=%u/20\n",
+               mode, sample, tick, speeds[sp] / 1000, ok);
+        if (ok > best_ok) {
+            best_ok = ok;
+            best = n;
+        }
+    }
+
+    sp = best / 32;
+    mode = (best / 8) % 4;
+    sample = (best / 4) % 2;
+    tick = best % 4;
+    fts_rate_conf.sample_sel = sample;
+    fts_rate_conf.tick_delay = tick;
+    spi->mode = mode;
+    spi->max_speed_hz = speeds[sp];
+    spi_setup(spi);
+    pr_err("fts-rate using mode%u sample%u tick%u %ukHz ok=%u/20\n",
+           mode, sample, tick, speeds[sp] / 1000, best_ok);
+}
+
 #define FTS_LATE_PROBE_RETRIES	12
 #define FTS_LATE_PROBE_RETRY	(10 * HZ)
 
@@ -2645,6 +2698,9 @@ static void fts_ts_late_probe(struct work_struct *work)
         return;
     }
     fts_probed = true;
+    fts_irq_disable();
+    fts_spi_rate_test(ts_data);
+    fts_irq_enable();
 
     fts_extra_proc_init();
     ret = fts_register_psenable_callback();
