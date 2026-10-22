@@ -16,7 +16,7 @@
  * if a driver hangs probing.
  *
  * fire_debug_reboot.grep=a,b copies kernel log lines containing any of the
- * substrings into the names of empty platform devices 40 s after boot:
+ * substrings into the names of empty platform devices 150 s after boot:
  * Android's SELinux policy keeps adb from reading the log, but not from
  * listing /sys/bus/platform/devices.
  *
@@ -65,7 +65,7 @@ static char *grep;
 module_param(grep, charp, 0444);
 MODULE_PARM_DESC(grep, "Report log lines with these ',' separated substrings");
 
-#define FIRE_GREP_DELAY		(40 * HZ)
+#define FIRE_GREP_DELAY		(150 * HZ)
 #define FIRE_GREP_MAX		40
 #define FIRE_GREP_NAME		120
 
