@@ -2668,11 +2668,12 @@ static int fts_ts_probe(struct spi_device *spi)
     FTS_INFO("Touch Screen(SPI BUS) driver prboe...");
     /*
      * The FT8725 of the 0c/0d panels only answers correctly in mode 3
-     * here (mode 0 gives bad CRCs), and at the DT's 9.6 MHz some reads
-     * still fail their CRC; 4.8 MHz is plenty for touch reports.
+     * here (mode 0 gives bad CRCs). At 9.6 MHz reads fail their CRC
+     * now and then, at 4.8 MHz the 270 KB firmware download fails its
+     * ECC check; 1 MHz is still plenty for touch reports.
      */
     spi->mode = SPI_MODE_3;
-    spi->max_speed_hz = 4800000;
+    spi->max_speed_hz = 1000000;
     spi->bits_per_word = 8;
     ret = spi_setup(spi);
     if (ret) {
