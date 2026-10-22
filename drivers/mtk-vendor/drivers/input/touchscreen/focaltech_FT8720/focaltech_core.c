@@ -50,7 +50,6 @@
 #include <linux/earlysuspend.h>
 #define FTS_SUSPEND_LEVEL 1     /* Early-suspend level */
 #endif
-#include <linux/platform_data/spi-mt65xx.h>
 #include "focaltech_core.h"
 #include "tpd_notify.h"
 #include "../../../gpu/drm/mediatek/mediatek_v2/mtk_disp_notify.h"
@@ -411,59 +410,6 @@ static int fts_read_bootid(struct fts_ts_data *ts_data, u8 *id)
 * Output:
 * Return: return 0 if get correct ic information, otherwise return error code
 *****************************************************************************/
-/*
- * fire bring-up: the FT8725 behind this panel returns corrupted replies.
- * Try the SPI mode, sample edge, tick delay and speed combinations once,
- * log what each reads back as "fts-sweep" and keep the first that gives
- * a non-zero boot id with a good CRC.
- */
-static struct mtk_chip_config fts_sweep_conf;
-
-static void fts_spi_sweep(struct fts_ts_data *ts_data)
-{
-    static const u32 speeds[] = { 9600000, 4800000, 1000000 };
-    static bool done;
-    struct spi_device *spi = ts_data->spi;
-    u32 mode, tick, sample, sp;
-    int found = 0, ret;
-    u8 id[2];
-
-    if (done)
-        return;
-    done = true;
-
-    for (sp = 0; sp < ARRAY_SIZE(speeds); sp++)
-    for (mode = 0; mode <= 3; mode += 3)
-    for (sample = 0; sample <= 1; sample++)
-    for (tick = 0; tick <= 3; tick++) {
-        fts_sweep_conf.sample_sel = sample;
-        fts_sweep_conf.tick_delay = tick;
-        spi->controller_data = &fts_sweep_conf;
-        spi->mode = mode;
-        spi->max_speed_hz = speeds[sp];
-        spi_setup(spi);
-
-        fts_reset_proc(0);
-        mdelay(FTS_CMD_START_DELAY);
-        id[0] = id[1] = 0;
-        ret = fts_read_bootid(ts_data, id);
-        pr_err("fts-sweep mode%u sample%u tick%u %ukHz: ret %d id %02x%02x\n",
-               mode, sample, tick, speeds[sp] / 1000, ret, id[0], id[1]);
-        if (!ret && !found) {
-            found = 1;
-            pr_err("fts-sweep using mode%u sample%u tick%u %ukHz\n",
-                   mode, sample, tick, speeds[sp] / 1000);
-            return;
-        }
-    }
-    /* nothing worked: back to the stock settings */
-    fts_sweep_conf.sample_sel = 0;
-    fts_sweep_conf.tick_delay = 0;
-    spi->mode = SPI_MODE_0;
-    spi->max_speed_hz = 9600000;
-    spi_setup(spi);
-}
-
 static int fts_get_ic_information(struct fts_ts_data *ts_data)
 {
     int ret = 0;
@@ -472,7 +418,6 @@ static int fts_get_ic_information(struct fts_ts_data *ts_data)
 
     ts_data->ic_info.is_incell = FTS_CHIP_IDC;
     ts_data->ic_info.hid_supported = FTS_HID_SUPPORTTED;
-    fts_spi_sweep(ts_data);
 
     for (cnt = 0; cnt < 3; cnt++) {
         fts_reset_proc(0);
@@ -2721,8 +2666,11 @@ static int fts_ts_probe(struct spi_device *spi)
     struct fts_ts_data *ts_data = NULL;
 
     FTS_INFO("Touch Screen(SPI BUS) driver prboe...");
-    /* Like the stock 6.6 module: speed from the DT (9.6 MHz) */
-    spi->mode = SPI_MODE_0;
+    /*
+     * Speed from the DT (9.6 MHz). The FT8725 of the 0c/0d panels only
+     * answers correctly in mode 3 here (mode 0 gives bad CRCs).
+     */
+    spi->mode = SPI_MODE_3;
     spi->bits_per_word = 8;
     ret = spi_setup(spi);
     if (ret) {

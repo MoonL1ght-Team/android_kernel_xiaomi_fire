@@ -33,6 +33,7 @@
 * 1.Included header files
 *****************************************************************************/
 #include <linux/vmalloc.h>
+#include <linux/init.h>
 #include "focaltech_core.h"
 #include "focaltech_flash.h"
 
@@ -42,6 +43,20 @@
 #define FTS_FW_REQUEST_SUPPORT                      1
 /* Example: focaltech_ts_fw_tianma.bin */
 #define FTS_FW_NAME_PREX_WITH_REQUEST               "focaltech_ts_fw_"
+
+/*
+ * fire: the stock driver picks the firmware by panel (get_panel_id() in
+ * the vendor mtk_panel_ext): 0b has an FT8720, 0c an FT8725 and 0d an
+ * FT8725 rev 2. Use the panel LK reports on the command line.
+ */
+static const char *fts_fw_name(void)
+{
+    if (strstr(saved_command_line, "dsi_panel_m19a_42_03_0d"))
+        return "focaltech_8725_2_fw";
+    if (strstr(saved_command_line, "dsi_panel_m19a_42_03_0c"))
+        return "focaltech_8725_fw";
+    return FTS_FW_NAME_PREX_WITH_REQUEST;
+}
 #define FTS_READ_BOOT_ID_TIMEOUT                    3
 #define FTS_FLASH_PACKET_LENGTH_SPI_LOW             (4 * 1024 - 4)
 #define FTS_FLASH_PACKET_LENGTH_SPI                 (32 * 1024 - 16)
@@ -919,8 +934,7 @@ static int fts_fw_resume(bool need_reset, enum FW_TYPE fw_type)
     }
 
     if (FTS_FW_REQUEST_SUPPORT) {
-        snprintf(fwname, FILE_NAME_LENGTH, "%s%s.bin", \
-                 FTS_FW_NAME_PREX_WITH_REQUEST, upg->module_info->vendor_name);
+        snprintf(fwname, FILE_NAME_LENGTH, "%s.bin", fts_fw_name());
         ret = request_firmware(&fw, fwname, upg->ts_data->dev);
         if (ret == 0) {
             FTS_INFO("firmware(%s) request successfully", fwname);
@@ -1080,9 +1094,7 @@ static int fts_get_fw_file_via_request_firmware(struct fts_upgrade *upg)
     u8 *tmpbuf = NULL;
     char fwname[FILE_NAME_LENGTH] = { 0 };
 
-    snprintf(fwname, FILE_NAME_LENGTH, "%s%s.bin", \
-             FTS_FW_NAME_PREX_WITH_REQUEST, \
-             upg->module_info->vendor_name);
+    snprintf(fwname, FILE_NAME_LENGTH, "%s.bin", fts_fw_name());
     FTS_INFO("firmware(%s)", fwname);
     ret = request_firmware(&fw, fwname, upg->ts_data->dev);
     if (0 == ret) {
