@@ -4,10 +4,11 @@
  *
  * The device thermal HAL reads zones by their 6.6 vendor names, and
  * system_server will not boot unless at least one is readable. Expose
- * the AP and modem PA thermistors (AUXADC channels 0 and 1, described by
- * the stock DT as mtboard-thermistor4/5) as "mtktsAP" and
- * "mtktsbtsmdpa", converted like the vendor mtk_ts_bts drivers do by
- * default: NCP15WF104F03RC 100k NTC, 390k pull-up to 1.8 V.
+ * the board thermistors (AUXADC channels 0-3, mtboard-thermistor4-7 in
+ * the stock DT) as thermal zones, converted like the vendor mtk_ts_bts
+ * drivers: NCP15WF104F03RC 100k NTC on a pull-up to 1.8 V. The stock
+ * module uses 100k and 390k pull-ups; which channel is the AP sensor is
+ * still being worked out, so each probe logs its reading.
  */
 
 #include <linux/iio/consumer.h>
@@ -17,7 +18,6 @@
 #include <linux/platform_device.h>
 #include <linux/thermal.h>
 
-#define FIRE_NTC_PULL_UP_OHM	390000
 #define FIRE_NTC_PULL_UP_MV	1800
 
 struct fire_ntc_point {
@@ -38,8 +38,15 @@ static const struct fire_ntc_point fire_ntc_table[] = {
 	{ 120, 2916 }, { 125, 2522 },
 };
 
+struct fire_ntc_desc {
+	const char *channel;
+	const char *zone;
+	int pull_up_ohm;
+};
+
 struct fire_ntc {
 	struct iio_channel *chan;
+	const struct fire_ntc_desc *desc;
 };
 
 /* Resistance to millidegrees, interpolating between table points. */
@@ -75,7 +82,7 @@ static int fire_ntc_get_temp(struct thermal_zone_device *tz, int *temp)
 	if (mv <= 0 || mv >= FIRE_NTC_PULL_UP_MV)
 		return -ENODATA;
 
-	*temp = fire_ntc_ohm_to_mdeg((long long)FIRE_NTC_PULL_UP_OHM * mv /
+	*temp = fire_ntc_ohm_to_mdeg((long long)ntc->desc->pull_up_ohm * mv /
 				     (FIRE_NTC_PULL_UP_MV - mv));
 	return 0;
 }
@@ -84,16 +91,12 @@ static const struct thermal_zone_device_ops fire_ntc_ops = {
 	.get_temp = fire_ntc_get_temp,
 };
 
-struct fire_ntc_desc {
-	const char *channel;
-	const char *zone;
-};
-
 static int fire_ntc_probe(struct platform_device *pdev)
 {
 	const struct fire_ntc_desc *desc = of_device_get_match_data(&pdev->dev);
 	struct thermal_zone_device *tz;
 	struct fire_ntc *ntc;
+	int mv;
 
 	ntc = devm_kzalloc(&pdev->dev, sizeof(*ntc), GFP_KERNEL);
 	if (!ntc)
@@ -103,6 +106,13 @@ static int fire_ntc_probe(struct platform_device *pdev)
 	if (IS_ERR(ntc->chan))
 		return dev_err_probe(&pdev->dev, PTR_ERR(ntc->chan),
 				     "no %s\n", desc->channel);
+
+	ntc->desc = desc;
+	if (iio_read_channel_processed(ntc->chan, &mv) >= 0 && mv < FIRE_NTC_PULL_UP_MV)
+		dev_info(&pdev->dev, "%s: %d mV, %lld ohm at 100k, %lld ohm at 390k\n",
+			 desc->channel, mv,
+			 100000LL * mv / (FIRE_NTC_PULL_UP_MV - mv),
+			 390000LL * mv / (FIRE_NTC_PULL_UP_MV - mv));
 
 	tz = thermal_tripless_zone_device_register(desc->zone, ntc,
 						   &fire_ntc_ops, NULL);
@@ -118,19 +128,28 @@ static void fire_ntc_remove(struct platform_device *pdev)
 	thermal_zone_device_unregister(platform_get_drvdata(pdev));
 }
 
-static const struct fire_ntc_desc fire_ntc_ap = {
-	.channel = "thermistor-ch0",
-	.zone = "mtktsAP",
+/* ch1 reads a plausible room temperature with the 100k pull-up */
+static const struct fire_ntc_desc fire_ntc_ch0 = {
+	.channel = "thermistor-ch0", .zone = "fire_ntc0", .pull_up_ohm = 100000,
 };
 
 static const struct fire_ntc_desc fire_ntc_mdpa = {
-	.channel = "thermistor-ch1",
-	.zone = "mtktsbtsmdpa",
+	.channel = "thermistor-ch1", .zone = "mtktsbtsmdpa", .pull_up_ohm = 100000,
+};
+
+static const struct fire_ntc_desc fire_ntc_ch2 = {
+	.channel = "thermistor-ch2", .zone = "fire_ntc2", .pull_up_ohm = 100000,
+};
+
+static const struct fire_ntc_desc fire_ntc_ch3 = {
+	.channel = "thermistor-ch3", .zone = "fire_ntc3", .pull_up_ohm = 100000,
 };
 
 static const struct of_device_id fire_ntc_match[] = {
-	{ .compatible = "mediatek,mtboard-thermistor4", .data = &fire_ntc_ap },
+	{ .compatible = "mediatek,mtboard-thermistor4", .data = &fire_ntc_ch0 },
 	{ .compatible = "mediatek,mtboard-thermistor5", .data = &fire_ntc_mdpa },
+	{ .compatible = "mediatek,mtboard-thermistor7", .data = &fire_ntc_ch2 },
+	{ .compatible = "mediatek,mtboard-thermistor6", .data = &fire_ntc_ch3 },
 	{ }
 };
 
