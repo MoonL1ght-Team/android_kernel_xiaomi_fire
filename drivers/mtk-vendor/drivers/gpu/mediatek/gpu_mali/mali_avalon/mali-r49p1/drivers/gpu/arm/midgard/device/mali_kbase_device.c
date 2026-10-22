@@ -23,6 +23,7 @@
  * Base kernel device APIs
  */
 
+#include <linux/vmalloc.h>
 #include <linux/debugfs.h>
 #include <linux/dma-mapping.h>
 #include <linux/seq_file.h>
@@ -317,10 +318,9 @@ int kbase_device_misc_init(struct kbase_device *const kbdev)
 
 
 	/* There is no limit for Mali, so set to max. */
+	/* 6.12: dma_set_max_seg_size() returns void */
 	if (kbdev->dev->dma_parms)
-		err = dma_set_max_seg_size(kbdev->dev, UINT_MAX);
-	if (err)
-		goto dma_set_mask_failed;
+		dma_set_max_seg_size(kbdev->dev, UINT_MAX);
 
 	kbdev->nr_hw_address_spaces = (s8)kbdev->gpu_props.num_address_spaces;
 

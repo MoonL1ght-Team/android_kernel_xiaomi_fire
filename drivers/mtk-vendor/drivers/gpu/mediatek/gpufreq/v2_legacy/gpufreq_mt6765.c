@@ -2306,7 +2306,7 @@ done:
 	return ret;
 }
 /* API: gpufreq driver remove */
-static int __gpufreq_pdrv_remove(struct platform_device *pdev)
+static void __gpufreq_pdrv_remove(struct platform_device *pdev)
 {
 	dev_pm_domain_detach(g_mtcmos->pd_mfg, true);
 	dev_pm_domain_detach(g_mtcmos->pd_mfg_async, true);
@@ -2317,7 +2317,6 @@ static int __gpufreq_pdrv_remove(struct platform_device *pdev)
 	kfree(g_pmic);
 	kfree(g_mtcmos);
 	kfree(g_power_table);
-	return GPUFREQ_SUCCESS;
 }
 /* API: register gpufreq platform driver */
 static int __init __gpufreq_init(void)

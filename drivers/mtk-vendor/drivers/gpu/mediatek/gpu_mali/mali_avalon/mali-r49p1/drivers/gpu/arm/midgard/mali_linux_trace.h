@@ -480,7 +480,7 @@ TRACE_EVENT(mali_mem_alloc,
 		__entry->pid = pid;
 		__entry->size = size;
 		__entry->gpu_addr = gpu_addr;
-		__assign_str(category, category);
+		__assign_str(category);
 	),
 	TP_printk("gpu_id=%u pid=%u size=%llu gpu_addr=%llu usage=%s",
 		__entry->gpu_id,
@@ -505,7 +505,7 @@ TRACE_EVENT(mali_mem_free,
 		__entry->pid = pid;
 		__entry->size = size;
 		__entry->gpu_addr = gpu_addr;
-		__assign_str(category, category);
+		__assign_str(category);
 	),
 	TP_printk("gpu_id=%u pid=%u size=%llu gpu_addr=%llu usage=%s",
 		__entry->gpu_id,
@@ -532,7 +532,7 @@ TRACE_EVENT(mali_mem_update,
 		__entry->size_a = size_a;
 		__entry->size_b = size_b;
 		__entry->gpu_addr = gpu_addr;
-		__assign_str(category, category);
+		__assign_str(category);
 	),
 	TP_printk("gpu_id=%u pid=%u size_a=%llu size_b=%llu gpu_addr=%llu usage=%s",
 		__entry->gpu_id,
@@ -625,7 +625,7 @@ TRACE_EVENT(tracing_mark_write,
 	TP_fast_assign(
 		__entry->type = type;
 		__entry->pid = pid;
-		__assign_str(name, name);
+		__assign_str(name);
 		__entry->value = value;
 	),
 	TP_printk("%s", __format_trace_str(__entry->type, __entry->pid, __get_str(name), __entry->value, __get_str(buf)))
@@ -654,9 +654,9 @@ TRACE_EVENT(mali_kthread_event,
 		__string(function, function)
 	),
 	TP_fast_assign(
-		__assign_str(event, event);
+		__assign_str(event);
 		__entry->work = work;
-		__assign_str(function, function);
+		__assign_str(function);
 	),
 	TP_printk("%s: work struct=%p function=%s timestamp=%llu", __get_str(event), __entry->work, __get_str(function), ktime_get_raw_ns())
 );

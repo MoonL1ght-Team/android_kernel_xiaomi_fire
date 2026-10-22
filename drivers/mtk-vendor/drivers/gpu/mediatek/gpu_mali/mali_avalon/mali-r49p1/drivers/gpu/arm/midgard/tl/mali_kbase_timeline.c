@@ -19,6 +19,7 @@
  *
  */
 
+#include <linux/vmalloc.h>
 #include "mali_kbase_timeline.h"
 #include "mali_kbase_timeline_priv.h"
 #include "mali_kbase_tracepoints.h"

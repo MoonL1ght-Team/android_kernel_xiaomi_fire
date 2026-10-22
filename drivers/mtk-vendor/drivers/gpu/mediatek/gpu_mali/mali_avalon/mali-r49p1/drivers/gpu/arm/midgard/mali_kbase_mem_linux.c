@@ -23,6 +23,7 @@
  * DOC: Base kernel memory APIs, Linux implementation.
  */
 
+#include <linux/vmalloc.h>
 #include <linux/compat.h>
 #include <linux/kernel.h>
 #include <linux/bug.h>

@@ -3951,7 +3951,7 @@ done:
 }
 
 /* API: gpufreq driver remove */
-static int __gpufreq_pdrv_remove(struct platform_device *pdev)
+static void __gpufreq_pdrv_remove(struct platform_device *pdev)
 {
 #if !GPUFREQ_SELF_CTRL_MTCMOS
 	dev_pm_domain_detach(g_mtcmos->mfg3_dev, true);
@@ -3969,7 +3969,6 @@ static int __gpufreq_pdrv_remove(struct platform_device *pdev)
 #if !GPUFREQ_SELF_CTRL_MTCMOS
 	kfree(g_mtcmos);
 #endif				/* GPUFREQ_SELF_CTRL_MTCMOS */
-	return GPUFREQ_SUCCESS;
 }
 
 /* API: register gpufreq platform driver */

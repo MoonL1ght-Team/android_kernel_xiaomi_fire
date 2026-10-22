@@ -22,6 +22,7 @@
 /**
  * DOC: Base kernel memory APIs
  */
+#include <linux/vmalloc.h>
 #include <linux/dma-buf.h>
 #include <linux/kernel.h>
 #include <linux/bug.h>

@@ -19,6 +19,7 @@
  *
  */
 
+#include <linux/vmalloc.h>
 #include <mali_kbase.h>
 #include <linux/spinlock.h>
 #include <mali_kbase_hwaccess_jm.h>

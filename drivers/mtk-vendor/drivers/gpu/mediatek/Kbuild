@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0
+# fire 6.12: the MT6768 (Mali-G52, r49p1) parts of the vendor GPU stack,
+# built in. The vendor top-level Makefile expects a module build.
+DEVICE_MODULES_PATH ?= $(srctree)/drivers/mtk-vendor
+export MTK_PLATFORM := mt6768
+subdir-ccflags-y += -DCONFIG_GPU_MT6768
+
+obj-y += hal/
+obj-y += gpufreq/v2_legacy/
+obj-y += ged/
+obj-y += gpu_mali/mali_avalon/mali-r49p1/drivers/base/arm/memory_group_manager/
+obj-y += gpu_mali/mali_avalon/mali-r49p1/drivers/gpu/arm/midgard/

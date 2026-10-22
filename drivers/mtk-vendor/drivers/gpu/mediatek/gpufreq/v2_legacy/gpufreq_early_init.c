@@ -174,10 +174,9 @@ void notify_gpufreq_probe_done(void)
 EXPORT_SYMBOL(notify_gpufreq_probe_done);
 
 /* API: gpufreq_early_init driver remove */
-static int __gpufreq_early_init_pdrv_remove(struct platform_device *pdev)
+static void __gpufreq_early_init_pdrv_remove(struct platform_device *pdev)
 {
 	kfree(g_pmic);
-	return GPUFREQ_SUCCESS;
 }
 
 

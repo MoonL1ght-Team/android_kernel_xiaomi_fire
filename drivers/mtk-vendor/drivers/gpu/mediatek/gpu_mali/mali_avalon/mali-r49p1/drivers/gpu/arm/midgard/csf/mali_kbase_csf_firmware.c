@@ -19,6 +19,7 @@
  *
  */
 
+#include <linux/vmalloc.h>
 #include "mali_kbase.h"
 #include "mali_kbase_csf_firmware_cfg.h"
 #include "mali_kbase_csf_firmware_log.h"

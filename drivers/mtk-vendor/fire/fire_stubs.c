@@ -137,3 +137,18 @@ int clkbuf_xo_ctrl(char *cmd, int xo_id, u32 input)
 {
 	return 0;
 }
+
+/* GPU: frequency meter readback, only used for debug output */
+unsigned int mt_get_abist_freq(unsigned int id)
+{
+	return 0;
+}
+
+/* GPU: dma-buf names for the MTK heaps' debug, not ported */
+long mtk_dma_buf_set_name(struct dma_buf *dmabuf, const char *buf)
+{
+	return 0;
+}
+
+/* GPU: bandwidth QoS hint (gpu_bm/mtk_gpu_qos), not ported */
+void MTKGPUQoS_mode_ratio(int mode) { }

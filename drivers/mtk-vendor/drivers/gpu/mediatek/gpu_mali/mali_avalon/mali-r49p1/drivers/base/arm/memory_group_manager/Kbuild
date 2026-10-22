@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0
+# fire 6.12: plain ARM memory group manager. The MT6768 vendor build adds
+# MGMM/SLC policies on top, which need the MTK heaps and slbc.
+DEVICE_MODULES_PATH ?= $(srctree)/drivers/mtk-vendor
+ccflags-y += -I$(src)/../../../gpu/arm/midgard/include -I$(DEVICE_MODULES_PATH)/include
+obj-y += memory_group_manager.o

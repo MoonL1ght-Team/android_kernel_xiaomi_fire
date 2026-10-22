@@ -19,6 +19,7 @@
  *
  */
 
+#include <linux/vmalloc.h>
 #include "mali_kbase.h"
 #include "mali_kbase_regs_history_debugfs.h"
 

@@ -32,7 +32,8 @@ ifeq ($(BUILD_RULE),OOT)
         CONFIG_MALI_MTK_DEVFREQ_GOVERNOR := y
         CONFIG_MALI_MTK_DEVFREQ_THERMAL := y
         CONFIG_MALI_MTK_PROC_FS := y
-        CONFIG_MTK_GPU_SWPM_SUPPORT :=y
+        # fire: no SSPM driver for the power model
+        CONFIG_MTK_GPU_SWPM_SUPPORT :=n
     endif
 endif
 

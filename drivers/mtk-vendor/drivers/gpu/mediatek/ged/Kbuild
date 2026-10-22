@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
+# fire 6.12: reuse the vendor Makefile.
+DEVICE_MODULES_PATH ?= $(srctree)/drivers/mtk-vendor
+include $(src)/Makefile

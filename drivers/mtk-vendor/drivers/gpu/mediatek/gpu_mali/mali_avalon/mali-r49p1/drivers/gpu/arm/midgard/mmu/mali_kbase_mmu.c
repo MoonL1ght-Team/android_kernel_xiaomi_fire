@@ -23,6 +23,7 @@
  * DOC: Base kernel MMU management.
  */
 
+#include <linux/vmalloc.h>
 #include <linux/kernel.h>
 #include <linux/dma-mapping.h>
 #include <linux/migrate.h>

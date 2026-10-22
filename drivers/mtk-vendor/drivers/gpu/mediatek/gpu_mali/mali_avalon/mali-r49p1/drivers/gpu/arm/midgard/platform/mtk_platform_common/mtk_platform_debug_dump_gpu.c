@@ -3,6 +3,7 @@
  * Copyright (c) 2022 MediaTek Inc.
  */
 
+#include <linux/vmalloc.h>
 #include <mali_kbase.h>
 #include <mali_kbase_defs.h>
 #include <mali_kbase_sync.h>

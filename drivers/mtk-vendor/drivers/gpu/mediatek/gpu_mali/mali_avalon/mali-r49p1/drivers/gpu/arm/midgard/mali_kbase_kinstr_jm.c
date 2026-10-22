@@ -24,6 +24,7 @@
  * Kernel driver public interface to job manager atom tracing
  */
 
+#include <linux/vmalloc.h>
 #include "mali_kbase_kinstr_jm.h"
 #include <uapi/gpu/arm/midgard/mali_kbase_kinstr_jm_reader.h>
 
@@ -642,7 +643,7 @@ static __poll_t reader_poll(struct file *const file, struct poll_table_struct *c
 
 /* The file operations virtual function table */
 static const struct file_operations file_operations = { .owner = THIS_MODULE,
-							.llseek = no_llseek,
+							.llseek = noop_llseek,
 							.read = reader_read,
 							.poll = reader_poll,
 							.release = reader_release };

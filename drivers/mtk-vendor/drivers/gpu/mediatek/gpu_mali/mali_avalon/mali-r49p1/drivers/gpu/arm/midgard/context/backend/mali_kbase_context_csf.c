@@ -23,6 +23,7 @@
  * Base kernel context APIs for CSF GPUs
  */
 
+#include <linux/vmalloc.h>
 #include <context/mali_kbase_context_internal.h>
 #include <hw_access/mali_kbase_hw_access_regmap.h>
 #include <mali_kbase.h>

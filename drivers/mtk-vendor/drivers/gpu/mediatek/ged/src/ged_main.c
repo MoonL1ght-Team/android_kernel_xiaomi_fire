@@ -80,7 +80,7 @@ static long ged_ioctl_compat(struct file *pFile,
 	unsigned int ioctlCmd, unsigned long arg);
 #endif
 static int ged_pdrv_probe(struct platform_device *pdev);
-static int ged_pdrv_remove(struct platform_device *pdev);
+static void ged_pdrv_remove(struct platform_device *pdev);
 static void ged_exit(void);
 static int ged_init(void);
 
@@ -129,7 +129,7 @@ static const struct proc_ops ged_proc_fops = {
 	.proc_poll = ged_poll,
 	.proc_read = ged_read,
 	.proc_write = ged_write,
-	.proc_lseek = no_llseek,
+	.proc_lseek = noop_llseek,
 	.proc_ioctl = ged_ioctl,
 #ifdef CONFIG_COMPAT
 	.proc_compat_ioctl = ged_ioctl_compat,
@@ -882,7 +882,7 @@ ERROR:
 /*
  * ged driver remove
  */
-static int ged_pdrv_remove(struct platform_device *pdev)
+static void ged_pdrv_remove(struct platform_device *pdev)
 {
 #ifndef GED_BUFFER_LOG_DISABLE
 	ged_log_buf_free(gpufreq_ged_log);
@@ -941,8 +941,6 @@ static int ged_pdrv_remove(struct platform_device *pdev)
 	ged_gpufreq_exit();
 
 	remove_proc_entry(GED_DRIVER_DEVICE_NAME, NULL);
-
-	return GED_OK;
 }
 
 /*

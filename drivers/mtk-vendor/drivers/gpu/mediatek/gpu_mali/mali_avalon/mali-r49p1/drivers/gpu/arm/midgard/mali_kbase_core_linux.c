@@ -19,6 +19,7 @@
  *
  */
 
+#include <linux/vmalloc.h>
 #include <mali_kbase.h>
 #include <mali_kbase_config_defaults.h>
 #include <hw_access/mali_kbase_hw_access_regmap.h>
@@ -749,7 +750,9 @@ static int kbase_open(struct inode *inode, struct file *filp)
 	}
 
 	filp->private_data = kfile;
+#ifdef FMODE_UNSIGNED_OFFSET
 	filp->f_mode |= FMODE_UNSIGNED_OFFSET;
+#endif
 
 	return 0;
 
@@ -2375,6 +2378,10 @@ static const struct file_operations kbase_fops = {
 	.mmap = kbase_mmap,
 	.check_flags = kbase_check_flags,
 	.get_unmapped_area = kbase_get_unmapped_area,
+#ifdef FOP_UNSIGNED_OFFSET
+	/* 6.12: replaces FMODE_UNSIGNED_OFFSET in f_mode */
+	.fop_flags = FOP_UNSIGNED_OFFSET,
+#endif
 };
 
 #if IS_ENABLED(CONFIG_MALI_MIDGARD_DVFS) && \
@@ -6191,18 +6198,16 @@ void kbase_sysfs_term(struct kbase_device *kbdev)
 	put_device(kbdev->dev);
 }
 
-static int kbase_platform_device_remove(struct platform_device *pdev)
+static void kbase_platform_device_remove(struct platform_device *pdev)
 {
 	struct kbase_device *kbdev = to_kbase_device(&pdev->dev);
 
 	if (!kbdev)
-		return -ENODEV;
+		return;
 
 	kbase_device_term(kbdev);
 	dev_set_drvdata(kbdev->dev, NULL);
 	kbase_device_free(kbdev);
-
-	return 0;
 }
 
 void kbase_backend_devfreq_term(struct kbase_device *kbdev)

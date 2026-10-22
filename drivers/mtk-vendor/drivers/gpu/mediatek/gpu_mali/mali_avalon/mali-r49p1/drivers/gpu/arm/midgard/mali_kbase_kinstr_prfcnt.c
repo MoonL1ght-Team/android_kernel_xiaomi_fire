@@ -19,6 +19,7 @@
  *
  */
 
+#include <linux/vmalloc.h>
 #include "mali_kbase.h"
 #include "mali_kbase_kinstr_prfcnt.h"
 #include "hwcnt/mali_kbase_hwcnt_virtualizer.h"

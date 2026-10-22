@@ -10,6 +10,7 @@
 #include <linux/vmalloc.h>
 #include <linux/slab.h>
 #include <linux/sched/clock.h>
+#include <linux/pid.h>
 #include <linux/interrupt.h>
 
 #include <linux/uaccess.h>

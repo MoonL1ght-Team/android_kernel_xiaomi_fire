@@ -3277,15 +3277,13 @@ done:
 }
 
 /* API: gpufreq driver remove */
-static int __gpufreq_pdrv_remove(struct platform_device *pdev)
+static void __gpufreq_pdrv_remove(struct platform_device *pdev)
 {
 	kfree(g_gpu.working_table);
 	kfree(g_gpu.sb_table);
 	kfree(g_clk);
 	kfree(g_pmic);
 	kfree(g_power_table);
-
-	return GPUFREQ_SUCCESS;
 }
 
 static int __gpufreq_mfgpll_probe(struct platform_device *pdev)

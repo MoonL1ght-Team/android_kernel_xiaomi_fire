@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0
+# fire 6.12: build mali_kbase_mt6768_r49 in, with the settings the vendor
+# Makefile uses for its mt6768 out-of-tree build.
+DEVICE_MODULES_PATH ?= $(srctree)/drivers/mtk-vendor
+BUILD_RULE := OOT
+MTK_PLATFORM_VERSION := mt6768
+CONFIG_MALI_PLATFORM_NAME := mt6768
+include $(src)/Makefile

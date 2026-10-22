@@ -30,6 +30,7 @@
 #error "Don't include this file directly, use mali_kbase.h instead"
 #endif
 
+#include <linux/vmalloc.h>
 #include <hw_access/mali_kbase_hw_access_regmap.h>
 #include <uapi/gpu/arm/midgard/mali_base_kernel.h>
 #include <mali_kbase_hw.h>

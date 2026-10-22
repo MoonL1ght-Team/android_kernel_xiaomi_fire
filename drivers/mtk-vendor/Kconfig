@@ -63,4 +63,28 @@ config DRM_PANEL_FIRE_M19A_42_03_0D
 	  FT8720 1080x2460 panel of Xiaomi fire behind the MT6382 bridge,
 	  reported by LK as dsi_panel_m19a_42_03_0d_dsc_vdo.
 
+config FIRE_MTK_VENDOR_GPU
+	bool "Mali-G52 GPU (MediaTek r49p1 DDK) and its MTK helpers"
+	depends on FIRE_MTK_VENDOR_DRM && PM_DEVFREQ && DEVFREQ_THERMAL && SYNC_FILE
+	default y
+	help
+	  mtk_gpu_hal, gpufreq v2_legacy for MT6768, GED and mali_kbase
+	  r49p1, matching the stock libGLES_mali.
+
+# Symbols the vendor GPU Makefiles and sources key off.
+config MTK_GPU_SUPPORT
+	def_bool FIRE_MTK_VENDOR_GPU
+
+config MTK_GPU_LEGACY
+	def_bool FIRE_MTK_VENDOR_GPU
+
+config MTK_GPUFREQ_V2
+	def_bool FIRE_MTK_VENDOR_GPU
+
+config MTK_GPU_MT6768_SUPPORT
+	def_bool FIRE_MTK_VENDOR_GPU
+
+config MTK_GPU_COMMON_DVFS_SUPPORT
+	def_bool FIRE_MTK_VENDOR_GPU
+
 endmenu

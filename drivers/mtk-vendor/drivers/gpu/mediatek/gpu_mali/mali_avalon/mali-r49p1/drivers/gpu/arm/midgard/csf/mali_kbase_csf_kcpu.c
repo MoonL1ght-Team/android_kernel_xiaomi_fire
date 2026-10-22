@@ -19,6 +19,7 @@
  *
  */
 
+#include <linux/vmalloc.h>
 #include <mali_kbase.h>
 #include <mali_kbase_reg_track.h>
 #include <tl/mali_kbase_tracepoints.h>

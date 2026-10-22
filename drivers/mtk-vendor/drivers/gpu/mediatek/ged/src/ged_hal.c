@@ -3,6 +3,7 @@
  * Copyright (c) 2019 MediaTek Inc.
  */
 
+#include <linux/vmalloc.h>
 #include <linux/version.h>
 #include <linux/io.h>
 #include <linux/mm.h>
