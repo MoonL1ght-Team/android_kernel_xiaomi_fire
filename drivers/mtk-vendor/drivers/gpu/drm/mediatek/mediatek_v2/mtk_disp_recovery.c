@@ -467,6 +467,8 @@ done:
 	return ret;
 }
 
+static bool fire_esd_force_once = true;
+
 static int mtk_drm_esd_recover(struct drm_crtc *crtc)
 {
 	struct mtk_drm_crtc *mtk_crtc = to_mtk_crtc(crtc);
@@ -629,7 +631,18 @@ int mtk_drm_esd_testing_process(struct mtk_drm_esd_ctx *esd_ctx, bool need_lock)
 		i = 0; /* repeat */
 		do {
 			mtk_drm_trace_begin("esd loop:%d", i);
-			ret = mtk_drm_esd_check(crtc);
+			/*
+			 * fire: LK's panel init leaves the FT8725 touch half of
+			 * the TDDI silent; it needs one full panel power cycle,
+			 * like a lock/unlock. Do one recovery after boot.
+			 */
+			if (fire_esd_force_once) {
+				fire_esd_force_once = false;
+				pr_err("fire-esd: forcing one display recovery\n");
+				ret = -EIO;
+			} else {
+				ret = mtk_drm_esd_check(crtc);
+			}
 			if (!ret) /* success */
 				break;
 

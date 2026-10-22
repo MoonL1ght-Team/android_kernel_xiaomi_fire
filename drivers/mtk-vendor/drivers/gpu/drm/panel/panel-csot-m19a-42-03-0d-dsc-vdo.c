@@ -44,7 +44,6 @@ struct lcm {
 
 	bool prepared;
 	bool enabled;
-	bool powered_off_once;
 
 	int error;
 };
@@ -212,19 +211,6 @@ static int lcm_prepare(struct drm_panel *panel)
 	pr_err("fire-panel prepare (prepared=%d)\n", ctx->prepared);
 	if (ctx->prepared)
 		return 0;
-
-	/*
-	 * First enable after LK: take the panel fully off first, as a
-	 * lock/unlock does, or the touch half of the TDDI stays silent.
-	 */
-	if (!ctx->powered_off_once) {
-		ctx->powered_off_once = true;
-		gpiod_set_value(ctx->reset_gpio, 0);
-		gpiod_set_value(ctx->biasn_gpio, 0);
-		usleep_range(1000, 1100);
-		gpiod_set_value(ctx->biasp_gpio, 0);
-		msleep(100);
-	}
 
 	gpiod_set_value(ctx->reset_gpio, 0);
 	usleep_range(3000, 3100);
@@ -502,13 +488,9 @@ static int lcm_probe(struct mipi_dsi_device *dsi)
 		return dev_err_probe(dev, PTR_ERR(ctx->biasn_gpio),
 				     "cannot get biasn gpio\n");
 
-	/*
-	 * Re-initialise the panel on the first enable even though LK left it
-	 * running: the touch half of this TDDI only reports after a full
-	 * panel power sequence, as after a lock/unlock.
-	 */
-	ctx->prepared = false;
-	ctx->enabled = false;
+	/* LK left the panel running; mediatek_v2 skips the first prepare. */
+	ctx->prepared = true;
+	ctx->enabled = true;
 
 	drm_panel_init(&ctx->panel, dev, &lcm_drm_funcs, DRM_MODE_CONNECTOR_DSI);
 	drm_panel_add(&ctx->panel);
