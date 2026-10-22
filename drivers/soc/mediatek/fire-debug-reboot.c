@@ -66,7 +66,7 @@ module_param(grep, charp, 0444);
 MODULE_PARM_DESC(grep, "Report log lines with these ',' separated substrings");
 
 #define FIRE_GREP_DELAY		(150 * HZ)
-#define FIRE_GREP_MAX		40
+#define FIRE_GREP_MAX		120
 #define FIRE_GREP_NAME		120
 
 static bool nosuspend;
