@@ -2666,9 +2666,9 @@ static int fts_ts_probe(struct spi_device *spi)
     struct fts_ts_data *ts_data = NULL;
 
     FTS_INFO("Touch Screen(SPI BUS) driver prboe...");
+    /* Like the stock 6.6 module: speed from the DT (9.6 MHz) */
     spi->mode = SPI_MODE_0;
     spi->bits_per_word = 8;
-    spi->max_speed_hz = 6000000;
     ret = spi_setup(spi);
     if (ret) {
         FTS_ERROR("spi setup fail");

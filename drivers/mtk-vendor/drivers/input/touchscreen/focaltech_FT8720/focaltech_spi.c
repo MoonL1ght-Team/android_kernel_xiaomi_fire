@@ -71,8 +71,6 @@
 *****************************************************************************/
 /* spi interface */
 
-/* 6.12 spi-mt65xx has no per-device CS setup time; use the core delay */
-static struct mtk_chip_config fts_mt_chip_conf = {};
 static int fts_spi_transfer(u8 *tx_buf, u8 *rx_buf, u32 len)
 {
     int ret = 0;
@@ -84,12 +82,7 @@ static int fts_spi_transfer(u8 *tx_buf, u8 *rx_buf, u32 len)
         .len    = len,
     };
 
-    spi->controller_data = (void*)&fts_mt_chip_conf;
-    /* vendor: cs_setuptime 300 ticks, a few us */
-    spi->cs_setup.value = 3;
-    spi->cs_setup.unit = SPI_DELAY_UNIT_USECS;
-    ret = spi_setup(spi);
-
+    /* Like the stock 6.6 module: plain spi_sync, setup done at probe */
     spi_message_init(&msg);
     spi_message_add_tail(&xfer, &msg);
 
