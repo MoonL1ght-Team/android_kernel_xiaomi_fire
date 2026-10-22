@@ -15,6 +15,11 @@
  * mtkclient. The timers are armed from core_initcall so they still fire
  * if a driver hangs probing.
  *
+ * fire_debug_reboot.grep=a,b copies kernel log lines containing any of the
+ * substrings into the names of empty platform devices 40 s after boot:
+ * Android's SELinux policy keeps adb from reading the log, but not from
+ * listing /sys/bus/platform/devices.
+ *
  * fire_debug_reboot.nosuspend=1 holds a wakeup source forever: system
  * suspend resets the SoC until the SPM low power firmware is set up.
  *
@@ -26,7 +31,10 @@
 #include <linux/blkdev.h>
 #include <linux/device.h>
 #include <linux/fs.h>
+#include <linux/ctype.h>
 #include <linux/kernel.h>
+#include <linux/kmsg_dump.h>
+#include <linux/platform_device.h>
 #include <linux/module.h>
 #include <linux/mount.h>
 #include <linux/panic.h>
@@ -52,6 +60,14 @@ MODULE_PARM_DESC(delay, "Seconds after boot before a deliberate panic (0 = off)"
 static bool save_prev;
 module_param(save_prev, bool, 0444);
 MODULE_PARM_DESC(save_prev, "Copy the previous boot's ramoops console log to expdb");
+
+static char *grep;
+module_param(grep, charp, 0444);
+MODULE_PARM_DESC(grep, "Report log lines with these ',' separated substrings");
+
+#define FIRE_GREP_DELAY		(40 * HZ)
+#define FIRE_GREP_MAX		40
+#define FIRE_GREP_NAME		120
 
 static bool nosuspend;
 module_param(nosuspend, bool, 0444);
@@ -189,11 +205,56 @@ static int __init fire_debug_reboot_init(void)
 }
 core_initcall(fire_debug_reboot_init);
 
+static bool fire_grep_match(const char *line)
+{
+	const char *p = grep, *end;
+	char pat[64];
+	size_t len;
+
+	while (p && *p) {
+		end = strchrnul(p, ',');
+		len = min_t(size_t, end - p, sizeof(pat) - 1);
+		memcpy(pat, p, len);
+		pat[len] = 0;
+		if (len && strstr(line, pat))
+			return true;
+		p = *end ? end + 1 : end;
+	}
+	return false;
+}
+
+static void fire_grep_fn(struct work_struct *work)
+{
+	struct kmsg_dump_iter iter;
+	char line[512], name[FIRE_GREP_NAME + 16];
+	unsigned int n = 0, i, o;
+	size_t len;
+
+	kmsg_dump_rewind(&iter);
+	while (n < FIRE_GREP_MAX &&
+	       kmsg_dump_get_line(&iter, false, line, sizeof(line) - 1, &len)) {
+		line[len] = 0;
+		if (!fire_grep_match(line))
+			continue;
+		o = snprintf(name, sizeof(name), "kmsg-%02u-", n++);
+		for (i = 0; line[i] && line[i] != '\n' && o < sizeof(name) - 1; i++)
+			name[o++] = isalnum(line[i]) || strchr("._-:=", line[i]) ?
+				    line[i] : '_';
+		name[o] = 0;
+		platform_device_register_simple(name, PLATFORM_DEVID_NONE, NULL, 0);
+	}
+}
+
+static DECLARE_DELAYED_WORK(fire_grep_work, fire_grep_fn);
+
 /* After the wakeup source class exists */
 static int __init fire_nosuspend_init(void)
 {
 	struct wakeup_source *ws;
 
+	if (grep && *grep)
+		queue_delayed_work(system_unbound_wq, &fire_grep_work,
+				   FIRE_GREP_DELAY);
 	if (!nosuspend)
 		return 0;
 	ws = wakeup_source_register(NULL, "fire-nosuspend");

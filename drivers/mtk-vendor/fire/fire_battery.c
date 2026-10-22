@@ -228,7 +228,7 @@ static int fire_battery_probe(struct platform_device *pdev)
 static struct platform_driver fire_battery_driver = {
 	.probe = fire_battery_probe,
 	.driver = {
-		.name = "fire-battery",
+		.name = "battery",
 		.suppress_bind_attrs = true,
 	},
 };
@@ -241,7 +241,8 @@ static int __init fire_battery_init(void)
 	ret = platform_driver_register(&fire_battery_driver);
 	if (ret)
 		return ret;
-	pdev = platform_device_register_simple("fire-battery", -1, NULL, 0);
+	/* /sys/devices/platform/battery is labelled sysfs_batteryinfo */
+	pdev = platform_device_register_simple("battery", -1, NULL, 0);
 	if (IS_ERR(pdev)) {
 		platform_driver_unregister(&fire_battery_driver);
 		return PTR_ERR(pdev);
