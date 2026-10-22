@@ -34,6 +34,7 @@
 *****************************************************************************/
 #include <linux/vmalloc.h>
 #include <linux/init.h>
+#include <linux/platform_data/spi-mt65xx.h>
 #include "focaltech_core.h"
 #include "focaltech_flash.h"
 
@@ -1189,6 +1190,73 @@ static int fts_fwupg_get_fw_file(struct fts_upgrade *upg)
     return ret;
 }
 
+
+/*
+ * fire bring-up: the FT8725 only talks SPI mode 3 here, and whether reads
+ * and the firmware download pass their CRC/ECC depends on the controller's
+ * sample edge and tick delay. Try the settings until the download passes,
+ * then measure each setting with 50 chip id reads (logged as fts-rate)
+ * and keep the best one.
+ */
+static struct mtk_chip_config fts_fire_spi_conf;
+static const u32 fts_fire_speeds[] = { 9600000, 4800000, 1000000 };
+
+static void fts_fire_spi_set(struct spi_device *spi, u32 sample, u32 tick, u32 hz)
+{
+    fts_fire_spi_conf.sample_sel = sample;
+    fts_fire_spi_conf.tick_delay = tick;
+    spi->controller_data = &fts_fire_spi_conf;
+    spi->mode = SPI_MODE_3;
+    spi->max_speed_hz = hz;
+    spi_setup(spi);
+}
+
+static int fts_fire_download(struct fts_upgrade *upg)
+{
+    struct spi_device *spi = upg->ts_data->spi;
+    u32 sp, sample, tick;
+    int ret;
+
+    for (sp = 0; sp < ARRAY_SIZE(fts_fire_speeds); sp++)
+    for (sample = 0; sample < 2; sample++)
+    for (tick = 0; tick < 4; tick++) {
+        fts_fire_spi_set(spi, sample, tick, fts_fire_speeds[sp]);
+        ret = fts_fw_download(upg->fw, upg->fw_length, true);
+        pr_err("fts-dl sample%u tick%u %ukHz: %d\n", sample, tick,
+               fts_fire_speeds[sp] / 1000, ret);
+        if (ret >= 0)
+            return ret;
+    }
+    return ret;
+}
+
+static void fts_fire_rate_test(struct spi_device *spi)
+{
+    u32 sp, sample, tick, i, ok, best_ok = 0;
+    u32 best_s = 0, best_t = 0, best_hz = fts_fire_speeds[0];
+    u8 val;
+
+    for (sp = 0; sp < ARRAY_SIZE(fts_fire_speeds); sp++)
+    for (sample = 0; sample < 2; sample++)
+    for (tick = 0; tick < 4; tick++) {
+        fts_fire_spi_set(spi, sample, tick, fts_fire_speeds[sp]);
+        for (i = 0, ok = 0; i < 50; i++)
+            if (!fts_read_reg(FTS_REG_CHIP_ID, &val) && val == 0x87)
+                ok++;
+        pr_err("fts-rate sample%u tick%u %ukHz ok=%u/50\n", sample, tick,
+               fts_fire_speeds[sp] / 1000, ok);
+        if (ok > best_ok) {
+            best_ok = ok;
+            best_s = sample;
+            best_t = tick;
+            best_hz = fts_fire_speeds[sp];
+        }
+    }
+    fts_fire_spi_set(spi, best_s, best_t, best_hz);
+    pr_err("fts-rate using sample%u tick%u %ukHz ok=%u/50\n",
+           best_s, best_t, best_hz / 1000, best_ok);
+}
+
 static void fts_fwupg_work(struct work_struct *work)
 {
     int ret = 0;
@@ -1218,7 +1286,11 @@ static void fts_fwupg_work(struct work_struct *work)
         return ;
     }
     
-    ret = fts_fw_download(upg->fw, upg->fw_length, true);
+    fts_irq_disable();
+    ret = fts_fire_download(upg);
+    if (ret >= 0)
+        fts_fire_rate_test(upg->ts_data->spi);
+    fts_irq_enable();
     if (ret < 0) {
         FTS_ERROR("fw auto download failed");
     } else {
