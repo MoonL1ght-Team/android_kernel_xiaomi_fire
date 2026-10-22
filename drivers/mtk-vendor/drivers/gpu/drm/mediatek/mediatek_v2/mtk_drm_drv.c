@@ -10315,6 +10315,9 @@ static const struct file_operations mtk_drm_fops = {
 #ifdef CONFIG_COMPAT
 	.compat_ioctl = mtk_drm_compat_ioctl,
 #endif
+	.llseek = noop_llseek,
+	/* 6.12: drm_open() rejects fops without it */
+	.fop_flags = FOP_UNSIGNED_OFFSET,
 };
 
 static struct drm_driver mtk_drm_driver = {
