@@ -1647,6 +1647,18 @@ int fts_resume(void)
     FTS_INFO("resume end\n");
     return 0;
 }
+/*
+ * fire: after the boot-time firmware download the FT8725 reports nothing
+ * until a lock/unlock runs the resume path; run it once from there.
+ */
+void fts_fire_boot_resume(void)
+{
+    if (!fts_data)
+        return;
+    fts_data->suspended = true;
+    fts_ts_resume(fts_data->dev);
+}
+
 static void fts_resume_work(struct work_struct *work)
 {
     struct fts_ts_data *ts_data = container_of(work, struct fts_ts_data,

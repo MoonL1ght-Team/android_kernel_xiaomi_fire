@@ -1257,6 +1257,8 @@ static void fts_fire_rate_test(struct spi_device *spi)
            best_s, best_t, best_hz / 1000, best_ok);
 }
 
+void fts_fire_boot_resume(void);
+
 static void fts_fwupg_work(struct work_struct *work)
 {
     int ret = 0;
@@ -1301,6 +1303,7 @@ static void fts_fwupg_work(struct work_struct *work)
 	FTS_INFO("read FW version:0x%02x", fw_version);
         /* fts_fwupg_init() switched the ESD check off; nothing else does */
         fts_esdcheck_switch(upg->ts_data, ENABLE);
+        fts_fire_boot_resume();
 	sprintf(tp_version_info, "[Vendor]Huaxing [TP-IC]:FT8720, [FW]0x%x\n", fw_version);
     }
 }
