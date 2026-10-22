@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
+# fire 6.12: only the panels fire ships with.
+ccflags-y += -I$(DEVICE_MODULES_PATH)/include
+obj-$(CONFIG_DRM_PANEL_FIRE_M19A_42_03_0D) += panel-csot-m19a-42-03-0d-dsc-vdo.o

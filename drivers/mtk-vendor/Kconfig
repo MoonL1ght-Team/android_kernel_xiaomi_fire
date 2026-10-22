@@ -55,4 +55,12 @@ config MTK_MT6382_BDG
 	  fire routes DSI through an MT6382 bridge that compresses frames with
 	  VESA DSC; it is configured over SPI.
 
+config DRM_PANEL_FIRE_M19A_42_03_0D
+	bool "CSOT m19a 42-03-0d DSC video mode panel"
+	depends on FIRE_MTK_VENDOR_DRM
+	default y
+	help
+	  FT8720 1080x2460 panel of Xiaomi fire behind the MT6382 bridge,
+	  reported by LK as dsi_panel_m19a_42_03_0d_dsc_vdo.
+
 endmenu
