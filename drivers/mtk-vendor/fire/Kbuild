@@ -11,3 +11,4 @@ ccflags-y += -I$(DEVICE_MODULES_PATH)/drivers/gpu/drm/mediatek/mml \
 obj-y += fire_stubs.o
 obj-y += fire_scpsys_clk.o
 obj-$(CONFIG_DMABUF_HEAPS_SYSTEM) += fire_mtk_heaps.o
+obj-$(CONFIG_MEDIATEK_MT6577_AUXADC) += fire_board_thermal.o
