@@ -88,6 +88,12 @@ struct mtk_wdt_data {
 	const u8 *toprgu_sw_rst_tb;
 	int toprgu_sw_rst_num;
 	bool has_swsysrst_en;
+	/*
+	 * Restart through the watchdog rather than PSCI SYSTEM_RESET: the
+	 * reboot mode the bootloader reads lives in a TOPRGU register that
+	 * the PSCI path does not keep.
+	 */
+	bool restart_before_psci;
 };
 
 static const struct mtk_wdt_data mt2712_data = {
@@ -115,6 +121,7 @@ static const u8 mt6768_toprgu_sw_rst_tb[] = {
 static const struct mtk_wdt_data mt6768_data = {
 	.toprgu_sw_rst_tb = mt6768_toprgu_sw_rst_tb,
 	.toprgu_sw_rst_num = ARRAY_SIZE(mt6768_toprgu_sw_rst_tb),
+	.restart_before_psci = true,
 };
 
 static const struct mtk_wdt_data mt6795_data = {
@@ -513,7 +520,11 @@ static int mtk_wdt_probe(struct platform_device *pdev)
 
 	watchdog_init_timeout(&mtk_wdt->wdt_dev, timeout, dev);
 	watchdog_set_nowayout(&mtk_wdt->wdt_dev, nowayout);
-	watchdog_set_restart_priority(&mtk_wdt->wdt_dev, 128);
+	wdt_data = of_device_get_match_data(dev);
+	/* PSCI registers its restart handler at priority 129 */
+	watchdog_set_restart_priority(&mtk_wdt->wdt_dev,
+				      wdt_data && wdt_data->restart_before_psci ?
+				      192 : 128);
 
 	watchdog_set_drvdata(&mtk_wdt->wdt_dev, mtk_wdt);
 

@@ -95,4 +95,12 @@ config FIRE_TOUCHSCREEN_FT8720
 	  FocalTech FT8720 TDDI touch controller on SPI, used with the CSOT
 	  m19a 42-03-0b/0d panels (focaltech,fts in the stock DT).
 
+config FIRE_MTK_KPD
+	bool "MediaTek keypad (volume up)"
+	depends on INPUT_KEYBOARD
+	default y
+	help
+	  Vendor keypad driver for the "mediatek,kp" node of the stock DT;
+	  volume up on fire is a keypad key.
+
 endmenu

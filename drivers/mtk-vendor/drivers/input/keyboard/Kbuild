@@ -1,0 +1,3 @@
+# SPDX-License-Identifier: GPL-2.0
+# fire 6.12: MediaTek keypad (volume up) from kernel_device_modules-6.6.
+obj-$(CONFIG_FIRE_MTK_KPD) += mtk-kpd.o
