@@ -44,6 +44,7 @@ struct lcm {
 
 	bool prepared;
 	bool enabled;
+	bool powered_off_once;
 
 	int error;
 };
@@ -208,6 +209,19 @@ static int lcm_prepare(struct drm_panel *panel)
 
 	if (ctx->prepared)
 		return 0;
+
+	/*
+	 * First enable after LK: take the panel fully off first, as a
+	 * lock/unlock does, or the touch half of the TDDI stays silent.
+	 */
+	if (!ctx->powered_off_once) {
+		ctx->powered_off_once = true;
+		gpiod_set_value(ctx->reset_gpio, 0);
+		gpiod_set_value(ctx->biasn_gpio, 0);
+		usleep_range(1000, 1100);
+		gpiod_set_value(ctx->biasp_gpio, 0);
+		msleep(100);
+	}
 
 	gpiod_set_value(ctx->reset_gpio, 0);
 	usleep_range(3000, 3100);
