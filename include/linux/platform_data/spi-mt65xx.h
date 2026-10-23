@@ -12,10 +12,13 @@
 /* Board specific platform_data */
 struct mtk_chip_config {
 	u32 sample_sel;
-	u32 tick_delay;
-	/* used by the vendor driver Xiaomi fire builds instead of this one */
+	/*
+	 * fire: same layout as the vendor header in drivers/mtk-vendor,
+	 * which the vendor SPI driver and its users may be built against
+	 */
 	u32 cs_setuptime;
 	u32 cs_holdtime;
 	u32 cs_idletime;
+	u32 tick_delay;
 };
 #endif
