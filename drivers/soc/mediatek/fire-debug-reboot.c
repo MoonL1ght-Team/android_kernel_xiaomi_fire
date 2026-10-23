@@ -16,7 +16,8 @@
  * if a driver hangs probing.
  *
  * fire_debug_reboot.grep=a,b copies kernel log lines containing any of the
- * substrings into the names of empty platform devices 150 s after boot:
+ * substrings into the names of empty platform devices 150 s after boot,
+ * then every 30 s with the newest matches:
  * Android's SELinux policy keeps adb from reading the log, but not from
  * listing /sys/bus/platform/devices.
  *
@@ -66,6 +67,7 @@ module_param(grep, charp, 0444);
 MODULE_PARM_DESC(grep, "Report log lines with these ',' separated substrings");
 
 #define FIRE_GREP_DELAY		(150 * HZ)
+#define FIRE_GREP_PERIOD	(30 * HZ)
 #define FIRE_GREP_MAX		200
 #define FIRE_GREP_NAME		120
 
@@ -223,29 +225,55 @@ static bool fire_grep_match(const char *line)
 	return false;
 }
 
+static char fire_grep_lines[FIRE_GREP_MAX][FIRE_GREP_NAME];
+static struct platform_device *fire_grep_devs[FIRE_GREP_MAX];
+
+static void fire_grep_fn(struct work_struct *work);
+static DECLARE_DELAYED_WORK(fire_grep_work, fire_grep_fn);
+
+/* Keeps the last FIRE_GREP_MAX matches, refreshed every FIRE_GREP_PERIOD. */
 static void fire_grep_fn(struct work_struct *work)
 {
 	struct kmsg_dump_iter iter;
 	char line[512], name[FIRE_GREP_NAME + 16];
-	unsigned int n = 0, i, o;
+	unsigned int n = 0, i, o, first;
 	size_t len;
 
 	kmsg_dump_rewind(&iter);
-	while (n < FIRE_GREP_MAX &&
-	       kmsg_dump_get_line(&iter, false, line, sizeof(line) - 1, &len)) {
-		line[len] = 0;
-		if (!fire_grep_match(line))
-			continue;
-		o = snprintf(name, sizeof(name), "kmsg-%02u-", n++);
-		for (i = 0; line[i] && line[i] != '\n' && o < sizeof(name) - 1; i++)
-			name[o++] = isalnum(line[i]) || strchr("._-:=", line[i]) ?
-				    line[i] : '_';
-		name[o] = 0;
-		platform_device_register_simple(name, PLATFORM_DEVID_NONE, NULL, 0);
-	}
-}
+	while (kmsg_dump_get_line(&iter, false, line, sizeof(line) - 1, &len)) {
+		char *dst = fire_grep_lines[n++ % FIRE_GREP_MAX];
 
-static DECLARE_DELAYED_WORK(fire_grep_work, fire_grep_fn);
+		line[len] = 0;
+		if (!fire_grep_match(line)) {
+			n--;
+			continue;
+		}
+		for (i = 0, o = 0; line[i] && line[i] != '\n' &&
+		     o < FIRE_GREP_NAME - 1; i++)
+			dst[o++] = isalnum(line[i]) || strchr("._-:=", line[i]) ?
+				   line[i] : '_';
+		dst[o] = 0;
+	}
+
+	for (i = 0; i < FIRE_GREP_MAX; i++) {
+		if (fire_grep_devs[i])
+			platform_device_unregister(fire_grep_devs[i]);
+		fire_grep_devs[i] = NULL;
+	}
+	first = n > FIRE_GREP_MAX ? n - FIRE_GREP_MAX : 0;
+	for (i = first; i < n; i++) {
+		snprintf(name, sizeof(name), "kmsg-%03u-%s", i - first,
+			 fire_grep_lines[i % FIRE_GREP_MAX]);
+		fire_grep_devs[i - first] =
+			platform_device_register_simple(name,
+							PLATFORM_DEVID_NONE,
+							NULL, 0);
+		if (IS_ERR(fire_grep_devs[i - first]))
+			fire_grep_devs[i - first] = NULL;
+	}
+	queue_delayed_work(system_unbound_wq, &fire_grep_work,
+			   FIRE_GREP_PERIOD);
+}
 
 /* After the wakeup source class exists */
 static int __init fire_nosuspend_init(void)
