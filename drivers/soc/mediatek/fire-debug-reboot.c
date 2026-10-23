@@ -21,6 +21,11 @@
  * Android's SELinux policy keeps adb from reading the log, but not from
  * listing /sys/bus/platform/devices.
  *
+ * fire_debug_reboot.hung_panic=1 panics once the hung task detector has
+ * reported a task (the report scan finds its message): Android turns the
+ * kernel's own hung_task_panic off, and a D state deadlock of init can
+ * not be rebooted from adb or the keys. The warm reboot keeps the log.
+ *
  * fire_debug_reboot.nosuspend=1 holds a wakeup source forever: system
  * suspend resets the SoC until the SPM low power firmware is set up.
  *
@@ -70,6 +75,10 @@ MODULE_PARM_DESC(grep, "Report log lines with these ',' separated substrings");
 #define FIRE_GREP_PERIOD	(30 * HZ)
 #define FIRE_GREP_MAX		200
 #define FIRE_GREP_NAME		120
+
+static bool hung_panic;
+module_param(hung_panic, bool, 0444);
+MODULE_PARM_DESC(hung_panic, "Panic when the hung task detector reports a task");
 
 static bool nosuspend;
 module_param(nosuspend, bool, 0444);
@@ -244,6 +253,8 @@ static void fire_grep_fn(struct work_struct *work)
 		char *dst = fire_grep_lines[n++ % FIRE_GREP_MAX];
 
 		line[len] = 0;
+		if (hung_panic && strstr(line, "blocked for more than"))
+			panic("fire-debug-reboot: hung task");
 		if (!fire_grep_match(line)) {
 			n--;
 			continue;
@@ -280,7 +291,7 @@ static int __init fire_nosuspend_init(void)
 {
 	struct wakeup_source *ws;
 
-	if (grep && *grep)
+	if ((grep && *grep) || hung_panic)
 		queue_delayed_work(system_unbound_wq, &fire_grep_work,
 				   FIRE_GREP_DELAY);
 	if (!nosuspend)
