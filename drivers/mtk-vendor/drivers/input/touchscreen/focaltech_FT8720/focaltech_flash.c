@@ -916,6 +916,7 @@ int fts_enter_test_environment(bool test_state)
 static int fts_fire_download(struct spi_device *spi, const u8 *buf, u32 len,
                              bool need_reset);
 static void fts_fire_spi_restore(struct spi_device *spi);
+static void fts_fire_rate_test(struct spi_device *spi);
 
 static int fts_fw_resume(bool need_reset, enum FW_TYPE fw_type)
 {
@@ -983,7 +984,11 @@ static int fts_fw_resume(bool need_reset, enum FW_TYPE fw_type)
     if (ret < 0) {
         ret = fts_fire_download(upg->ts_data->spi, fw_buf + app_off,
                                 fwlen - app_off, need_reset);
-        fts_fire_spi_restore(upg->ts_data->spi);
+        /* the boot-time read setting may have gone bad too: measure again */
+        if (ret >= 0)
+            fts_fire_rate_test(upg->ts_data->spi);
+        else
+            fts_fire_spi_restore(upg->ts_data->spi);
     }
     if (ret < 0) {
         FTS_ERROR("fw resume download failed");
