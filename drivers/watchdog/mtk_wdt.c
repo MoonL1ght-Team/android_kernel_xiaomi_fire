@@ -567,10 +567,15 @@ static int mtk_wdt_probe(struct platform_device *pdev)
  * (WDOG_HW_RUNNING) must be stopped too, or it resets the SoC while the
  * kernel sleeps.
  */
+static bool suspend_stop_hw = true;
+module_param(suspend_stop_hw, bool, 0444);
+MODULE_PARM_DESC(suspend_stop_hw,
+	"Stop a bootloader-started watchdog across suspend (off: debug a hanging suspend)");
+
 static bool mtk_wdt_running(struct mtk_wdt_dev *mtk_wdt)
 {
 	return watchdog_active(&mtk_wdt->wdt_dev) ||
-	       watchdog_hw_running(&mtk_wdt->wdt_dev);
+	       (suspend_stop_hw && watchdog_hw_running(&mtk_wdt->wdt_dev));
 }
 
 static int mtk_wdt_suspend(struct device *dev)

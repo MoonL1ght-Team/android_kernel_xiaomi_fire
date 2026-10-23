@@ -104,17 +104,22 @@ static const struct mtk_pmic_regs mt6357_regs = {
 	.rst_lprst_mask = MTK_PMIC_RST_DU_MASK,
 };
 
+/*
+ * MT6358 has the long press reset bits where MT6331 has them (vendor
+ * driver: PWRKEY_RST bit 9, HOMEKEY_RST bit 8, RST_DU bits 13:12); with
+ * the MT6397 layout the driver cleared the power key reset enable.
+ */
 static const struct mtk_pmic_regs mt6358_regs = {
 	.keys_regs[MTK_PMIC_PWRKEY_INDEX] =
 		MTK_PMIC_KEYS_REGS(MT6358_TOPSTATUS,
 				   0x2, MT6358_PSC_TOP_INT_CON0, 0x5,
-				   MTK_PMIC_PWRKEY_RST),
+				   MTK_PMIC_MT6331_PWRKEY_RST),
 	.keys_regs[MTK_PMIC_HOMEKEY_INDEX] =
 		MTK_PMIC_KEYS_REGS(MT6358_TOPSTATUS,
 				   0x8, MT6358_PSC_TOP_INT_CON0, 0xa,
-				   MTK_PMIC_HOMEKEY_RST),
+				   MTK_PMIC_MT6331_HOMEKEY_RST),
 	.pmic_rst_reg = MT6358_TOP_RST_MISC,
-	.rst_lprst_mask = MTK_PMIC_RST_DU_MASK,
+	.rst_lprst_mask = MTK_PMIC_MT6331_RST_DU_MASK,
 };
 
 struct mtk_pmic_keys_info {
