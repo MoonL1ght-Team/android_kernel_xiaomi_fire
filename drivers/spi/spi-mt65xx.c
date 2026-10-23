@@ -501,6 +501,19 @@ static void mtk_spi_prepare_transfer(struct spi_controller *host,
 		reg_val |= (((sck_time - 1) & 0xffff)
 			   << SPI_CFG2_SCK_LOW_OFFSET);
 		writel(reg_val, mdata->base + SPI_CFG2_REG);
+
+		/*
+		 * Like the vendor driver: if no CS setup time was set, use
+		 * two SCK periods instead of a single source clock tick. The
+		 * FT8725 touch on Xiaomi fire misreads the first bits
+		 * otherwise (CRC errors, SPI mode 0 not working at all).
+		 */
+		reg_val = readl(mdata->base + SPI_CFG0_REG);
+		if (!(reg_val >> SPI_ADJUST_CFG0_CS_SETUP_OFFSET)) {
+			reg_val |= ((sck_time * 2 - 1) & 0xffff)
+				   << SPI_ADJUST_CFG0_CS_SETUP_OFFSET;
+			writel(reg_val, mdata->base + SPI_CFG0_REG);
+		}
 	} else {
 		reg_val = readl(mdata->base + SPI_CFG0_REG);
 		reg_val &= ~(0xff << SPI_CFG0_SCK_HIGH_OFFSET);
