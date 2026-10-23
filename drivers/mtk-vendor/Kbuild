@@ -17,3 +17,4 @@ obj-$(CONFIG_MTK_MT6382_BDG) += drivers/misc/mediatek/cmdq/bridge/
 obj-$(CONFIG_FIRE_MTK_VENDOR_GPU) += drivers/gpu/mediatek/
 obj-$(CONFIG_FIRE_TOUCHSCREEN_FT8720) += drivers/input/touchscreen/focaltech_FT8720/
 obj-$(CONFIG_FIRE_MTK_KPD) += drivers/input/keyboard/
+obj-$(CONFIG_FIRE_SPI_MT65XX_VENDOR) += drivers/spi/

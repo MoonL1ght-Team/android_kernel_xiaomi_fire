@@ -95,6 +95,14 @@ config FIRE_TOUCHSCREEN_FT8720
 	  FocalTech FT8720 TDDI touch controller on SPI, used with the CSOT
 	  m19a 42-03-0b/0d panels (focaltech,fts in the stock DT).
 
+config FIRE_SPI_MT65XX_VENDOR
+	bool "MediaTek SPI controller, vendor driver"
+	depends on SPI_MASTER && ARCH_MEDIATEK && !SPI_MT65XX
+	help
+	  The kernel_device_modules-6.6 spi-mt65xx. With the upstream driver
+	  the FT8725 touch of fire sees frequent CRC errors (and none of its
+	  replies in SPI mode 0, which stock uses at 6 MHz).
+
 config FIRE_CPUFREQ
 	bool "MT6768 CPU DVFS from the AP (no SSPM)"
 	depends on CPU_FREQ && MFD_MT6397 && ARCH_MEDIATEK
