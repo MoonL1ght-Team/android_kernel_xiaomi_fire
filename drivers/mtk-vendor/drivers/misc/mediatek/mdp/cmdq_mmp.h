@@ -7,9 +7,7 @@
 #define __CMDQ_MMP_H__
 
 #include "cmdq_helper_ext.h"
-#if IS_ENABLED(CONFIG_MMPROFILE)
 #include "mmprofile.h"
-#endif
 
 struct MDP_MMP_events_t {
 	mmp_event CMDQ;

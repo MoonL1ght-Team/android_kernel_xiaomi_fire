@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-2.0
+# fire 6.12: MT6768 MDP (blitter used by the hwcomposer), built in.
+subdir-ccflags-y += -Wno-error
+LINUXINCLUDE := -I$(DEVICE_MODULES_PATH)/include $(LINUXINCLUDE)
+ccflags-y += -I$(DEVICE_MODULES_PATH)/include/ \
+	     -I$(DEVICE_MODULES_PATH)/drivers/iommu/arm/arm-smmu-v3 \
+	     -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/smi/ \
+	     -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/mmdvfs/ \
+	     -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/mtk-interconnect/ \
+	     -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/include/ \
+	     -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/mmp/ \
+	     -I$(DEVICE_MODULES_PATH)/drivers/iommu \
+	     -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/iommu/ \
+	     -I$(DEVICE_MODULES_PATH)/drivers/gpu/drm/mediatek/dpc \
+	     -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/cmdq/mailbox/ \
+	     -I$(DEVICE_MODULES_PATH)/drivers/dma-buf/heaps
+
+ccflags-y += -DCMDQ_LARGE_MAX_FIRSTERROR_BUFFER
+
+obj-y += cmdq_helper_inf.o mdp_drv_mt6768.o
+mdp_drv_mt6768-y := mdp_mt6768.o mdp_driver.o mdp_ioctl_ex.o mdp_common.o \
+	cmdq_record.o cmdq_virtual.o cmdq_device.o mdp_event_common.o \
+	cmdq_subsys_common.o cmdq_helper_ext.o cmdq_mmp.o mdp_fence.o mdp_dpc.o

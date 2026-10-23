@@ -8,6 +8,7 @@ obj-$(CONFIG_FIRE_MTK_VENDOR_DRM) += drivers/gpu/drm/mediatek/mtk_sync/
 obj-$(CONFIG_FIRE_MTK_VENDOR_DRM) += drivers/gpu/drm/panel/
 obj-$(CONFIG_FIRE_MTK_VENDOR_DRM) += fire/
 obj-$(CONFIG_MTK_CMDQ_MBOX_EXT) += drivers/misc/mediatek/cmdq/mailbox/
+obj-$(CONFIG_FIRE_MTK_MDP) += drivers/misc/mediatek/mdp/
 obj-$(CONFIG_DEVICE_MODULES_MTK_SMI) += drivers/memory/
 obj-$(CONFIG_DEVICE_MODULES_MTK_IOMMU) += drivers/iommu/
 obj-$(CONFIG_DEVICE_MODULES_MTK_SCPSYS) += drivers/soc/mediatek/

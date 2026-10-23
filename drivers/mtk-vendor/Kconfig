@@ -95,6 +95,17 @@ config FIRE_TOUCHSCREEN_FT8720
 	  FocalTech FT8720 TDDI touch controller on SPI, used with the CSOT
 	  m19a 42-03-0b/0d panels (focaltech,fts in the stock DT).
 
+config FIRE_MTK_MDP
+	bool "MT6768 MDP blitter (/dev/mdp_sync)"
+	depends on FIRE_MTK_VENDOR_DRM && SYNC_FILE
+	help
+	  Vendor MDP driver. The hwcomposer runs its blit jobs (rotation,
+	  scaling, refresh rate switches) on it; without it those frames
+	  are dropped and the screen flickers.
+
+config MTK_MDP
+	def_bool FIRE_MTK_MDP
+
 config FIRE_MTK_KPD
 	bool "MediaTek keypad (volume up)"
 	depends on INPUT_KEYBOARD
