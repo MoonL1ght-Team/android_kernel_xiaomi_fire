@@ -218,6 +218,22 @@ static int esdcheck_algorithm(struct fts_ts_data *ts_data)
         return 0;
     }
 
+    /*
+     * fire: the IRQ is edge triggered. If reading a report fails (SPI CRC
+     * errors are common, more so at 48/36 Hz), the IC keeps INT low until
+     * the report is read and no new edge ever comes: touch is dead until
+     * the next panel power cycle. Drain it from here.
+     */
+    if (!ts_data->suspended && gpio_is_valid(ts_data->pdata->irq_gpio) &&
+        !gpio_get_value(ts_data->pdata->irq_gpio)) {
+        FTS_ERROR("fire-touch: INT stuck low, reading the report");
+        disable_irq(ts_data->irq);
+        ts_data->intr_jiffies = jiffies;
+        fts_irq_read_report(ts_data);
+        enable_irq(ts_data->irq);
+        return 0;
+    }
+
     /* 2. check power state, if suspend, no need check esd */
     if (fts_esdcheck_data.suspend == 1) {
         FTS_DEBUG("In suspend, not check esd");

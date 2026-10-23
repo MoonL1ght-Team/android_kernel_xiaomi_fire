@@ -812,7 +812,7 @@ static int fts_read_parse_touchdata(struct fts_ts_data *ts_data, u8 *touch_buf)
     return ((touch_buf[FTS_TOUCH_E_NUM] >> 4) & 0x0F);
 }
 
-static int fts_irq_read_report(struct fts_ts_data *ts_data)
+int fts_irq_read_report(struct fts_ts_data *ts_data)
 {
     int i = 0;
     int max_touch_num = ts_data->pdata->max_touch_number;
