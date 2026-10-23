@@ -21,10 +21,11 @@
  * Android's SELinux policy keeps adb from reading the log, but not from
  * listing /sys/bus/platform/devices.
  *
- * fire_debug_reboot.hung_panic=1 panics once the hung task detector has
- * reported a task (the report scan finds its message): Android turns the
- * kernel's own hung_task_panic off, and a D state deadlock of init can
- * not be rebooted from adb or the keys. The warm reboot keeps the log.
+ * fire_debug_reboot.hung_panic=1 panics, after dumping its stack, when a
+ * user task stays in D state without being scheduled for about 2 minutes:
+ * Android turns the kernel's hung task detector off, and a D state
+ * deadlock of init can not be rebooted from adb or the keys. The warm
+ * reboot keeps the log.
  *
  * fire_debug_reboot.nosuspend=1 holds a wakeup source forever: system
  * suspend resets the SoC until the SPM low power firmware is set up.
@@ -45,6 +46,8 @@
 #include <linux/mount.h>
 #include <linux/panic.h>
 #include <linux/pm_wakeup.h>
+#include <linux/sched/debug.h>
+#include <linux/sched/signal.h>
 #include <linux/string.h>
 #include <linux/unaligned.h>
 #include <linux/vmalloc.h>
@@ -240,6 +243,70 @@ static struct platform_device *fire_grep_devs[FIRE_GREP_MAX];
 static void fire_grep_fn(struct work_struct *work);
 static DECLARE_DELAYED_WORK(fire_grep_work, fire_grep_fn);
 
+#define FIRE_HUNG_SLOTS		64
+#define FIRE_HUNG_SCANS		4	/* x FIRE_GREP_PERIOD */
+
+static struct {
+	pid_t pid;
+	unsigned long switches;
+	unsigned int seen;
+} fire_hung[FIRE_HUNG_SLOTS];
+
+/* Called every FIRE_GREP_PERIOD: track D state tasks that never run. */
+static void fire_hung_scan(void)
+{
+	struct task_struct *g, *t, *stuck = NULL;
+	bool alive[FIRE_HUNG_SLOTS] = {};
+	unsigned int i, free_slot;
+
+	rcu_read_lock();
+	for_each_process_thread(g, t) {
+		unsigned long sw = t->nvcsw + t->nivcsw;
+
+		/*
+		 * Only user tasks: some vendor kthreads (cmdq_buffer_usage,
+		 * disp_echk) idle in D state on a healthy system.
+		 */
+		if (READ_ONCE(t->__state) != TASK_UNINTERRUPTIBLE ||
+		    (t->flags & PF_KTHREAD))
+			continue;
+		free_slot = FIRE_HUNG_SLOTS;
+		for (i = 0; i < FIRE_HUNG_SLOTS; i++) {
+			if (fire_hung[i].pid == t->pid)
+				break;
+			if (!fire_hung[i].pid && free_slot == FIRE_HUNG_SLOTS)
+				free_slot = i;
+		}
+		if (i == FIRE_HUNG_SLOTS) {
+			if (free_slot == FIRE_HUNG_SLOTS)
+				continue;
+			i = free_slot;
+			fire_hung[i].pid = t->pid;
+			fire_hung[i].switches = sw;
+			fire_hung[i].seen = 0;
+		}
+		alive[i] = true;
+		if (fire_hung[i].switches != sw) {
+			fire_hung[i].switches = sw;
+			fire_hung[i].seen = 0;
+		} else if (++fire_hung[i].seen >= FIRE_HUNG_SCANS) {
+			pr_err("fire-debug-reboot: %s/%d stuck in D state\n",
+			       t->comm, t->pid);
+			sched_show_task(t);
+			stuck = t;
+		}
+	}
+	rcu_read_unlock();
+
+	for (i = 0; i < FIRE_HUNG_SLOTS; i++)
+		if (!alive[i])
+			fire_hung[i].pid = 0;
+	if (stuck) {
+		show_state_filter(TASK_UNINTERRUPTIBLE);
+		panic("fire-debug-reboot: task stuck in D state");
+	}
+}
+
 /* Keeps the last FIRE_GREP_MAX matches, refreshed every FIRE_GREP_PERIOD. */
 static void fire_grep_fn(struct work_struct *work)
 {
@@ -253,8 +320,6 @@ static void fire_grep_fn(struct work_struct *work)
 		char *dst = fire_grep_lines[n++ % FIRE_GREP_MAX];
 
 		line[len] = 0;
-		if (hung_panic && strstr(line, "blocked for more than"))
-			panic("fire-debug-reboot: hung task");
 		if (!fire_grep_match(line)) {
 			n--;
 			continue;
@@ -282,6 +347,8 @@ static void fire_grep_fn(struct work_struct *work)
 		if (IS_ERR(fire_grep_devs[i - first]))
 			fire_grep_devs[i - first] = NULL;
 	}
+	if (hung_panic)
+		fire_hung_scan();
 	queue_delayed_work(system_unbound_wq, &fire_grep_work,
 			   FIRE_GREP_PERIOD);
 }
