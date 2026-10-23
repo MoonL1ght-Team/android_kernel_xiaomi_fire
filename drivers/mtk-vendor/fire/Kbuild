@@ -13,4 +13,4 @@ obj-y += fire_scpsys_clk.o
 obj-$(CONFIG_DMABUF_HEAPS_SYSTEM) += fire_mtk_heaps.o
 obj-$(CONFIG_MEDIATEK_MT6577_AUXADC) += fire_board_thermal.o
 obj-$(CONFIG_MEDIATEK_MT6359_AUXADC) += fire_battery.o
-obj-y += fire_cpu_report.o
+obj-$(CONFIG_FIRE_CPUFREQ) += fire_cpufreq.o

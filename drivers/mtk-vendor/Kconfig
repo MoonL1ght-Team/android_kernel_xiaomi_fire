@@ -95,6 +95,14 @@ config FIRE_TOUCHSCREEN_FT8720
 	  FocalTech FT8720 TDDI touch controller on SPI, used with the CSOT
 	  m19a 42-03-0b/0d panels (focaltech,fts in the stock DT).
 
+config FIRE_CPUFREQ
+	bool "MT6768 CPU DVFS from the AP (no SSPM)"
+	depends on CPU_FREQ && MFD_MT6397 && ARCH_MEDIATEK
+	default y
+	help
+	  Scales the LL/L clusters and the CCI by programming the ARMPLLs
+	  and the MT6358 VPROC bucks directly, with the vendor OPP tables.
+
 config FIRE_MTK_MDP
 	bool "MT6768 MDP blitter (/dev/mdp_sync)"
 	depends on FIRE_MTK_VENDOR_DRM && SYNC_FILE
