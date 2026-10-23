@@ -913,10 +913,13 @@ int fts_enter_test_environment(bool test_state)
     return 0;
 }
 
+static int fts_fire_download(struct spi_device *spi, const u8 *buf, u32 len,
+                             bool need_reset);
+static void fts_fire_spi_restore(struct spi_device *spi);
+
 static int fts_fw_resume(bool need_reset, enum FW_TYPE fw_type)
 {
     int ret = 0;
-    int i;
     struct fts_upgrade *upg = fwupgrade;
     const struct firmware *fw = NULL;
     char fwname[FILE_NAME_LENGTH] = { 0 };
@@ -971,14 +974,16 @@ static int fts_fw_resume(bool need_reset, enum FW_TYPE fw_type)
 
 
     /*
-     * fire: the first download after a reset reliably fails its ECC
-     * check on the FT8725; the next one passes.
+     * fire: the SPI setting picked for reads is not always good enough
+     * for the 270 KB download; if it fails, sweep the settings like the
+     * boot download does, then go back to the read setting.
      */
-    for (i = 0; i < 3; i++) {
-        ret = fts_fw_download(fw_buf + app_off, fwlen - app_off, need_reset);
-        pr_err("fts-dl resume try %d: %d\n", i, ret);
-        if (ret >= 0)
-            break;
+    ret = fts_fw_download(fw_buf + app_off, fwlen - app_off, need_reset);
+    pr_err("fts-dl resume: %d\n", ret);
+    if (ret < 0) {
+        ret = fts_fire_download(upg->ts_data->spi, fw_buf + app_off,
+                                fwlen - app_off, need_reset);
+        fts_fire_spi_restore(upg->ts_data->spi);
     }
     if (ret < 0) {
         FTS_ERROR("fw resume download failed");
@@ -1221,17 +1226,27 @@ static void fts_fire_spi_set(struct spi_device *spi, u32 sample, u32 tick, u32 h
     spi_setup(spi);
 }
 
-static int fts_fire_download(struct fts_upgrade *upg)
+/* the setting fts_fire_rate_test() picked for reads */
+static u32 fts_fire_best_sample, fts_fire_best_tick;
+static u32 fts_fire_best_hz = 1000000;
+
+static void fts_fire_spi_restore(struct spi_device *spi)
 {
-    struct spi_device *spi = upg->ts_data->spi;
+    fts_fire_spi_set(spi, fts_fire_best_sample, fts_fire_best_tick,
+                     fts_fire_best_hz);
+}
+
+static int fts_fire_download(struct spi_device *spi, const u8 *buf, u32 len,
+                             bool need_reset)
+{
     u32 sp, sample, tick;
-    int ret;
+    int ret = -EIO;
 
     for (sp = 0; sp < ARRAY_SIZE(fts_fire_speeds); sp++)
     for (sample = 0; sample < 2; sample++)
     for (tick = 0; tick < 4; tick++) {
         fts_fire_spi_set(spi, sample, tick, fts_fire_speeds[sp]);
-        ret = fts_fw_download(upg->fw, upg->fw_length, true);
+        ret = fts_fw_download(buf, len, need_reset);
         pr_err("fts-dl sample%u tick%u %ukHz: %d\n", sample, tick,
                fts_fire_speeds[sp] / 1000, ret);
         if (ret >= 0)
@@ -1262,6 +1277,9 @@ static void fts_fire_rate_test(struct spi_device *spi)
             best_hz = fts_fire_speeds[sp];
         }
     }
+    fts_fire_best_sample = best_s;
+    fts_fire_best_tick = best_t;
+    fts_fire_best_hz = best_hz;
     fts_fire_spi_set(spi, best_s, best_t, best_hz);
     pr_err("fts-rate using sample%u tick%u %ukHz ok=%u/50\n",
            best_s, best_t, best_hz / 1000, best_ok);
@@ -1299,7 +1317,8 @@ static void fts_fwupg_work(struct work_struct *work)
     }
     
     fts_irq_disable();
-    ret = fts_fire_download(upg);
+    ret = fts_fire_download(upg->ts_data->spi, upg->fw, upg->fw_length,
+                            true);
     if (ret >= 0)
         fts_fire_rate_test(upg->ts_data->spi);
     fts_irq_enable();
