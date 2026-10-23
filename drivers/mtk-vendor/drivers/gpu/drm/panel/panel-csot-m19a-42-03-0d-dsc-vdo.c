@@ -259,14 +259,15 @@ static int lcm_enable(struct drm_panel *panel)
 	.vtotal = FRAME_HEIGHT + (_vfp) + VSA + VBP,		\
 }
 
-/* 60 Hz is the default, then 90 Hz, as in the stock module. */
+/* The single mode is the preferred one. */
 static const struct drm_display_mode lcm_modes[] = {
-	LCM_MODE(289321, 1248),		/* 60 Hz */
 	LCM_MODE(291178, 18),		/* 90 Hz */
 	/*
-	 * The stock 48 and 36 Hz modes are left out: switching to them makes
-	 * the hwcomposer blitter fail (wallpaper flicker) and the FT8725
-	 * touch, which scans in step with the panel, stop reporting.
+	 * Only 90 Hz for now: on every refresh rate switch the hwcomposer
+	 * asks the MDP blitter, which is not ported, and the frame flickers;
+	 * at 48/36 Hz the FT8725 touch, scanning in step with the panel,
+	 * also stops reporting. The stock 60/48/36 Hz modes can come back
+	 * with MDP.
 	 */
 };
 
@@ -330,7 +331,6 @@ static const struct drm_display_mode lcm_modes[] = {
 }
 
 static struct mtk_panel_params ext_params[] = {
-	LCM_EXT_PARAMS(2200),
 	LCM_EXT_PARAMS(2200),
 };
 
