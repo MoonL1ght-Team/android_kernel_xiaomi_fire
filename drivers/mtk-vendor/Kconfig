@@ -103,6 +103,14 @@ config FIRE_SPI_MT65XX_VENDOR
 	  the FT8725 touch of fire sees frequent CRC errors (and none of its
 	  replies in SPI mode 0, which stock uses at 6 MHz).
 
+config FIRE_CHARGER
+	bool "SYV690 charger of fire"
+	depends on I2C && REGMAP_I2C
+	default y
+	help
+	  Programs the stock limits into the SYV690 (BQ25890 compatible),
+	  turns off its I2C watchdog and reports charging to the battery.
+
 config FIRE_CPUFREQ
 	bool "MT6768 CPU DVFS from the AP (no SSPM)"
 	depends on CPU_FREQ && MFD_MT6397 && ARCH_MEDIATEK

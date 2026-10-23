@@ -21,6 +21,8 @@
 
 #include <dt-bindings/iio/adc/mediatek,mt6358-auxadc.h>
 
+#include "fire_charger.h"
+
 #define FIRE_BAT_POLL		(10 * HZ)
 /* VCDT reads about 1/10 of VBUS; anything above ~3 V of VBUS is a charger */
 #define FIRE_VCDT_ONLINE_MV	300
@@ -110,7 +112,31 @@ static void fire_battery_work(struct work_struct *work)
 
 static bool fire_usb_online(struct fire_battery *fb)
 {
+	struct fire_charger_state st;
+
+	if (!fire_charger_get(&st))
+		return st.online;
 	return fb->vcdt_mv > FIRE_VCDT_ONLINE_MV;
+}
+
+static int fire_bat_status(struct fire_battery *fb)
+{
+	struct fire_charger_state st;
+
+	if (fire_charger_get(&st))
+		return fire_usb_online(fb) ? POWER_SUPPLY_STATUS_CHARGING :
+					     POWER_SUPPLY_STATUS_DISCHARGING;
+	if (!st.online)
+		return POWER_SUPPLY_STATUS_DISCHARGING;
+	switch (st.chrg_stat) {
+	case 1:
+	case 2:
+		return POWER_SUPPLY_STATUS_CHARGING;
+	case 3:
+		return POWER_SUPPLY_STATUS_FULL;
+	default:
+		return POWER_SUPPLY_STATUS_NOT_CHARGING;
+	}
 }
 
 static int fire_bat_get(struct power_supply *psy, enum power_supply_property psp,
@@ -120,9 +146,15 @@ static int fire_bat_get(struct power_supply *psy, enum power_supply_property psp
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_STATUS:
-		val->intval = fire_usb_online(fb) ? POWER_SUPPLY_STATUS_CHARGING :
-						    POWER_SUPPLY_STATUS_DISCHARGING;
+		val->intval = fire_bat_status(fb);
 		break;
+	case POWER_SUPPLY_PROP_CURRENT_NOW: {
+		struct fire_charger_state st;
+
+		/* only the charge current is known; positive while charging */
+		val->intval = fire_charger_get(&st) ? 0 : st.ichg_ma * 1000;
+		break;
+	}
 	case POWER_SUPPLY_PROP_PRESENT:
 		val->intval = 1;
 		break;
@@ -162,6 +194,7 @@ static const enum power_supply_property fire_bat_props[] = {
 	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_TECHNOLOGY,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+	POWER_SUPPLY_PROP_CURRENT_NOW,
 	POWER_SUPPLY_PROP_CAPACITY,
 };
 
