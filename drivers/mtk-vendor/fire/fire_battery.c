@@ -5,9 +5,9 @@
  * The vendor fuel gauge and charger stack is not ported. Without any
  * battery Android reports 0% and shuts the phone down, so estimate the
  * charge from the battery voltage the MT6358 AUXADC measures (BATADC)
- * with a Li-ion open circuit voltage curve, and report USB as online
- * when the charger detect voltage (VCDT) is up. The values are rough:
- * the voltage sags under load and rises while charging.
+ * with a Li-ion open circuit voltage curve once at boot, then follow
+ * the MT6358 coulomb counter. Report USB as online from the charger, or
+ * when the charger detect voltage (VCDT) is up.
  */
 
 #include <linux/device.h>
@@ -26,6 +26,12 @@
 #define FIRE_BAT_POLL		(10 * HZ)
 /* VCDT reads about 1/10 of VBUS; anything above ~3 V of VBUS is a charger */
 #define FIRE_VCDT_ONLINE_MV	300
+/* 5000 mAh, in the gauge's 0.1 mAh */
+#define FIRE_BAT_Q		50000
+/* rough cell + path resistance, to get an OCV from a loaded voltage */
+#define FIRE_BAT_R_MOHM		150
+/* below this, discharging, Android is told 0% so it shuts down */
+#define FIRE_VBAT_EMPTY_MV	3400
 
 struct fire_ocv_point {
 	int mv;
@@ -44,6 +50,11 @@ struct fire_battery {
 	struct power_supply *bat, *usb;
 	struct delayed_work work;
 	int vbat_mv, vcdt_mv;
+	int ma;			/* gauge current, + while charging */
+	bool have_gauge;
+	int charge;		/* 0.1 mAh left */
+	int car_ref, charge_ref;	/* counter and charge at the anchor */
+	int empty_cnt;
 };
 
 static int fire_adc_mv(struct iio_dev *adc, int channel, int *mv)
@@ -89,14 +100,59 @@ static int fire_ocv_percent(int mv)
 	return 100;
 }
 
+static void fire_battery_anchor(struct fire_battery *fb, int car, int charge)
+{
+	fb->charge = clamp(charge, 0, FIRE_BAT_Q);
+	fb->charge_ref = fb->charge;
+	fb->car_ref = car;
+}
+
 static void fire_battery_update(struct fire_battery *fb)
 {
-	int mv;
+	struct fire_charger_state st;
+	bool charger = !fire_charger_get(&st);
+	int mv, ma, car;
 
 	if (!fire_adc_mv(fb->adc, MT6358_AUXADC_BATADC, &mv))
 		fb->vbat_mv = mv;
 	if (!fire_adc_mv(fb->adc, MT6358_AUXADC_VCDT, &mv))
 		fb->vcdt_mv = mv;
+
+	if (fire_gauge_read(&ma, &car))
+		return;
+	fb->ma = ma;
+	if (!fb->have_gauge) {
+		int ocv = fb->vbat_mv - ma * FIRE_BAT_R_MOHM / 1000;
+
+		fb->have_gauge = true;
+		fire_battery_anchor(fb, car,
+				    fire_ocv_percent(ocv) * FIRE_BAT_Q / 100);
+		pr_info("fire-battery: vbat %d mV, %d mA, ocv %d mV -> %d%%\n",
+			fb->vbat_mv, ma, ocv, fire_ocv_percent(ocv));
+		return;
+	}
+
+	fb->charge = clamp(fb->charge_ref + car - fb->car_ref, 0, FIRE_BAT_Q);
+	if (fb->charge == 0 || fb->charge == FIRE_BAT_Q ||
+	    (charger && st.online && st.chrg_stat == 3))
+		fire_battery_anchor(fb, car,
+				    charger && st.chrg_stat == 3 ? FIRE_BAT_Q :
+				    fb->charge);
+
+	if (fb->vbat_mv < FIRE_VBAT_EMPTY_MV && fb->ma <= 0)
+		fb->empty_cnt++;
+	else
+		fb->empty_cnt = 0;
+}
+
+static int fire_battery_capacity(struct fire_battery *fb)
+{
+	/* twice in a row, not on a single load dip */
+	if (fb->empty_cnt >= 2)
+		return 0;
+	if (!fb->have_gauge)
+		return max(fire_ocv_percent(fb->vbat_mv), 1);
+	return clamp(DIV_ROUND_CLOSEST(fb->charge * 100, FIRE_BAT_Q), 1, 100);
 }
 
 static void fire_battery_work(struct work_struct *work)
@@ -151,8 +207,11 @@ static int fire_bat_get(struct power_supply *psy, enum power_supply_property psp
 	case POWER_SUPPLY_PROP_CURRENT_NOW: {
 		struct fire_charger_state st;
 
-		/* only the charge current is known; positive while charging */
-		val->intval = fire_charger_get(&st) ? 0 : st.ichg_ma * 1000;
+		/* positive while charging */
+		if (fb->have_gauge)
+			val->intval = fb->ma * 1000;
+		else
+			val->intval = fire_charger_get(&st) ? 0 : st.ichg_ma * 1000;
 		break;
 	}
 	case POWER_SUPPLY_PROP_PRESENT:
@@ -168,8 +227,14 @@ static int fire_bat_get(struct power_supply *psy, enum power_supply_property psp
 		val->intval = fb->vbat_mv * 1000;
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
-		/* Never 0 while running, or Android powers off right away */
-		val->intval = max(fire_ocv_percent(fb->vbat_mv), 1);
+		val->intval = fire_battery_capacity(fb);
+		break;
+	case POWER_SUPPLY_PROP_CHARGE_COUNTER:
+		val->intval = fb->charge * 100;	/* uAh */
+		break;
+	case POWER_SUPPLY_PROP_CHARGE_FULL:
+	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
+		val->intval = FIRE_BAT_Q * 100;
 		break;
 	default:
 		return -EINVAL;
@@ -196,6 +261,9 @@ static const enum power_supply_property fire_bat_props[] = {
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 	POWER_SUPPLY_PROP_CURRENT_NOW,
 	POWER_SUPPLY_PROP_CAPACITY,
+	POWER_SUPPLY_PROP_CHARGE_COUNTER,
+	POWER_SUPPLY_PROP_CHARGE_FULL,
+	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
 };
 
 static const enum power_supply_property fire_usb_props[] = {
