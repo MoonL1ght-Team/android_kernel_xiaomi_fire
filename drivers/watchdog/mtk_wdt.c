@@ -562,11 +562,22 @@ static int mtk_wdt_probe(struct platform_device *pdev)
 	return 0;
 }
 
+/*
+ * A watchdog left running by the bootloader and pinged by the core
+ * (WDOG_HW_RUNNING) must be stopped too, or it resets the SoC while the
+ * kernel sleeps.
+ */
+static bool mtk_wdt_running(struct mtk_wdt_dev *mtk_wdt)
+{
+	return watchdog_active(&mtk_wdt->wdt_dev) ||
+	       watchdog_hw_running(&mtk_wdt->wdt_dev);
+}
+
 static int mtk_wdt_suspend(struct device *dev)
 {
 	struct mtk_wdt_dev *mtk_wdt = dev_get_drvdata(dev);
 
-	if (watchdog_active(&mtk_wdt->wdt_dev))
+	if (mtk_wdt_running(mtk_wdt))
 		mtk_wdt_stop(&mtk_wdt->wdt_dev);
 
 	return 0;
@@ -576,7 +587,7 @@ static int mtk_wdt_resume(struct device *dev)
 {
 	struct mtk_wdt_dev *mtk_wdt = dev_get_drvdata(dev);
 
-	if (watchdog_active(&mtk_wdt->wdt_dev)) {
+	if (mtk_wdt_running(mtk_wdt)) {
 		mtk_wdt_start(&mtk_wdt->wdt_dev);
 		mtk_wdt_ping(&mtk_wdt->wdt_dev);
 	}
