@@ -78,6 +78,7 @@
 #define I2C_CONTROL_DIR_CHANGE          (0x1 << 4)
 #define I2C_CONTROL_ACKERR_DET_EN       (0x1 << 5)
 #define I2C_CONTROL_TRANSFER_LEN_CHANGE (0x1 << 6)
+#define I2C_CONTROL_IRQ_SEL             (0x1 << 7)
 #define I2C_CONTROL_DMAACK_EN           (0x1 << 8)
 #define I2C_CONTROL_ASYNC_MODE          (0x1 << 9)
 #define I2C_CONTROL_WRAPPER             (0x1 << 0)
@@ -295,6 +296,7 @@ struct mtk_i2c {
 	struct clk_bulk_data clocks[I2C_MT65XX_CLK_MAX]; /* clocks for i2c */
 	bool have_pmic;			/* can use i2c pins from PMIC */
 	bool use_push_pull;		/* IO config push-pull mode */
+	bool ctrl_irq_sel;		/* route the IRQ through IRQ_SEL (MT6768) */
 
 	u16 irq_stat;			/* interrupt status */
 	unsigned int clk_src_div;
@@ -648,6 +650,8 @@ static void mtk_i2c_init_hw(struct mtk_i2c *i2c)
 		      I2C_CONTROL_CLK_EXT_EN | I2C_CONTROL_DMA_EN;
 	if (i2c->dev_comp->dma_sync)
 		control_reg |= I2C_CONTROL_DMAACK_EN | I2C_CONTROL_ASYNC_MODE;
+	if (i2c->ctrl_irq_sel)
+		control_reg |= I2C_CONTROL_IRQ_SEL;
 
 	mtk_i2c_writew(i2c, control_reg, OFFSET_CONTROL);
 	mtk_i2c_writew(i2c, I2C_DELAY_LEN, OFFSET_DELAY_LEN);
@@ -1382,6 +1386,8 @@ static int mtk_i2c_parse_dt(struct device_node *np, struct mtk_i2c *i2c)
 	i2c->have_pmic = of_property_read_bool(np, "mediatek,have-pmic");
 	i2c->use_push_pull =
 		of_property_read_bool(np, "mediatek,use-push-pull");
+	i2c->ctrl_irq_sel =
+		of_property_read_bool(np, "mediatek,control-irq-sel");
 
 	i2c_parse_fw_timings(i2c->dev, &i2c->timing_info, true);
 
