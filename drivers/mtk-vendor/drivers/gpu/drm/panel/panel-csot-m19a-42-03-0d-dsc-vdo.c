@@ -195,14 +195,19 @@ static void fire_bl_save(struct lcm *ctx)
 	unsigned int i;
 	int v;
 
-	if (!adap)
+	if (!adap) {
+		dev_warn(ctx->dev, "fire-panel: no i2c%d adapter\n", FIRE_BL_BUS);
 		return;
+	}
 	for (i = 0; i < ARRAY_SIZE(addrs) && !ctx->bl_i2c; i++) {
 		struct i2c_client *c = i2c_new_dummy_device(adap, addrs[i]);
 
 		if (IS_ERR(c))
 			continue;
-		if (i2c_smbus_read_byte_data(c, 0) < 0) {
+		v = i2c_smbus_read_byte_data(c, 0);
+		dev_info(ctx->dev, "fire-panel: i2c%d 0x%02x reg0: %d\n",
+			 FIRE_BL_BUS, addrs[i], v);
+		if (v < 0) {
 			i2c_unregister_device(c);
 			continue;
 		}
@@ -256,7 +261,14 @@ static int lcm_unprepare(struct drm_panel *panel)
 	 * The backlight driver keeps the LEDs lit over the dark panel once
 	 * its PWM input floats; nothing else in the kernel turns it off.
 	 */
-	gpiod_set_value(ctx->bl_en_gpio, 0);
+	/*
+	 * Save its setup on the first power down (i2c is long up by then);
+	 * without it, never switch it off.
+	 */
+	if (ctx->bl_en_gpio && !ctx->bl_i2c)
+		fire_bl_save(ctx);
+	if (ctx->bl_i2c)
+		gpiod_set_value(ctx->bl_en_gpio, 0);
 	gpiod_set_value(ctx->biasn_gpio, 0);
 	gpiod_set_value(ctx->biasp_gpio, 0);
 	usleep_range(5000, 5100);
@@ -567,10 +579,6 @@ static int lcm_probe(struct mipi_dsi_device *dsi)
 			ctx->bl_en_gpio = NULL;
 		}
 	}
-	fire_bl_save(ctx);
-	/* without the saved setup, never switch it off */
-	if (!ctx->bl_i2c)
-		ctx->bl_en_gpio = NULL;
 
 	/* LK left the panel running; mediatek_v2 skips the first prepare. */
 	ctx->prepared = true;
