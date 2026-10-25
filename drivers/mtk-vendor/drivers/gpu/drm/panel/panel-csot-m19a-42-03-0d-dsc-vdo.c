@@ -10,6 +10,7 @@
 #include <linux/backlight.h>
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
+#include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_graph.h>
@@ -41,6 +42,10 @@ struct lcm {
 	struct backlight_device *backlight;
 	struct gpio_desc *reset_gpio;
 	struct gpio_desc *biasp_gpio, *biasn_gpio;
+	/* KTD3136 backlight driver, set up by LK; no kernel driver */
+	struct i2c_client *ktd;
+	u8 ktd_mode, ktd_lsb, ktd_msb;
+	bool ktd_off;
 
 	bool prepared;
 	bool enabled;
@@ -174,6 +179,51 @@ static int lcm_disable(struct drm_panel *panel)
 	return 0;
 }
 
+/*
+ * The KTD3136 keeps its LEDs lit over the powered down panel. Switch it
+ * off over I2C the way the stock ktd3136_bl driver does for brightness
+ * 0 (ratio 0, MODE 0x00), and put LK's values back on power up.
+ */
+#define KTD_REG_MODE	0x02
+#define KTD_REG_LSB	0x04
+#define KTD_REG_MSB	0x05
+
+static void fire_ktd_off(struct lcm *ctx)
+{
+	if (!ctx->ktd) {
+		struct device_node *np;
+
+		np = of_find_compatible_node(NULL, NULL, "mediatek,ktd,ktd3136");
+		ctx->ktd = np ? of_find_i2c_device_by_node(np) : NULL;
+		of_node_put(np);
+		if (!ctx->ktd)
+			return;
+	}
+	if (ctx->ktd_off)
+		return;
+
+	ctx->ktd_mode = i2c_smbus_read_byte_data(ctx->ktd, KTD_REG_MODE);
+	ctx->ktd_lsb = i2c_smbus_read_byte_data(ctx->ktd, KTD_REG_LSB);
+	ctx->ktd_msb = i2c_smbus_read_byte_data(ctx->ktd, KTD_REG_MSB);
+	if (i2c_smbus_write_byte_data(ctx->ktd, KTD_REG_LSB, 0) < 0)
+		return;
+	i2c_smbus_write_byte_data(ctx->ktd, KTD_REG_MSB, 0);
+	i2c_smbus_write_byte_data(ctx->ktd, KTD_REG_MODE, 0x00);
+	ctx->ktd_off = true;
+	pr_err("fire-panel: backlight off (mode %#x ratio %#x/%#x)\n",
+	       ctx->ktd_mode, ctx->ktd_msb, ctx->ktd_lsb);
+}
+
+static void fire_ktd_on(struct lcm *ctx)
+{
+	if (!ctx->ktd || !ctx->ktd_off)
+		return;
+	i2c_smbus_write_byte_data(ctx->ktd, KTD_REG_MODE, ctx->ktd_mode);
+	i2c_smbus_write_byte_data(ctx->ktd, KTD_REG_MSB, ctx->ktd_msb);
+	i2c_smbus_write_byte_data(ctx->ktd, KTD_REG_LSB, ctx->ktd_lsb);
+	ctx->ktd_off = false;
+}
+
 static int lcm_unprepare(struct drm_panel *panel)
 {
 	struct lcm *ctx = panel_to_lcm(panel);
@@ -194,6 +244,7 @@ static int lcm_unprepare(struct drm_panel *panel)
 	lcm_cmd2_disable(ctx);
 	msleep(10);
 
+	fire_ktd_off(ctx);
 	gpiod_set_value(ctx->biasn_gpio, 0);
 	gpiod_set_value(ctx->biasp_gpio, 0);
 	usleep_range(5000, 5100);
@@ -220,6 +271,7 @@ static int lcm_prepare(struct drm_panel *panel)
 	usleep_range(2000, 2100);
 
 	lcm_panel_init(ctx);
+	fire_ktd_on(ctx);
 
 	ret = ctx->error;
 	if (ret < 0)
