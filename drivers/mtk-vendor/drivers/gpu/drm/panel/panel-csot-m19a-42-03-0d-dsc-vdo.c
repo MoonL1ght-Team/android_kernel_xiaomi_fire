@@ -10,6 +10,7 @@
 #include <linux/backlight.h>
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
+#include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_graph.h>
@@ -35,6 +36,9 @@
 
 #define DATA_RATE		770
 
+#define FIRE_BL_BUS	6	/* i2c6 */
+#define FIRE_BL_NREGS	0x20
+
 struct lcm {
 	struct device *dev;
 	struct drm_panel panel;
@@ -43,6 +47,9 @@ struct lcm {
 	struct gpio_desc *biasp_gpio, *biasn_gpio;
 	/* enable pin of the KTD3136/LM3697 backlight driver (LK sets it up) */
 	struct gpio_desc *bl_en_gpio;
+	/* its registers as LK left them, put back after each power up */
+	struct i2c_client *bl_i2c;
+	u8 bl_regs[FIRE_BL_NREGS];
 
 	bool prepared;
 	bool enabled;
@@ -176,6 +183,55 @@ static int lcm_disable(struct drm_panel *panel)
 	return 0;
 }
 
+/*
+ * The backlight driver loses LK's setup when its enable pin drops and
+ * there is no datasheet for it: save its registers at probe and write
+ * them back after each power up.
+ */
+static void fire_bl_save(struct lcm *ctx)
+{
+	static const unsigned short addrs[] = { 0x37, 0x36 };	/* KTD3136, LM3697 */
+	struct i2c_adapter *adap = i2c_get_adapter(FIRE_BL_BUS);
+	unsigned int i;
+	int v;
+
+	if (!adap)
+		return;
+	for (i = 0; i < ARRAY_SIZE(addrs) && !ctx->bl_i2c; i++) {
+		struct i2c_client *c = i2c_new_dummy_device(adap, addrs[i]);
+
+		if (IS_ERR(c))
+			continue;
+		if (i2c_smbus_read_byte_data(c, 0) < 0) {
+			i2c_unregister_device(c);
+			continue;
+		}
+		ctx->bl_i2c = c;
+	}
+	i2c_put_adapter(adap);
+	if (!ctx->bl_i2c) {
+		dev_warn(ctx->dev, "fire-panel: no backlight driver on i2c%d\n",
+			 FIRE_BL_BUS);
+		return;
+	}
+	for (i = 0; i < FIRE_BL_NREGS; i++) {
+		v = i2c_smbus_read_byte_data(ctx->bl_i2c, i);
+		ctx->bl_regs[i] = v < 0 ? 0 : v;
+	}
+	dev_info(ctx->dev, "fire-panel: backlight driver at 0x%02x: %*ph\n",
+		 ctx->bl_i2c->addr, FIRE_BL_NREGS, ctx->bl_regs);
+}
+
+static void fire_bl_restore(struct lcm *ctx)
+{
+	unsigned int i;
+
+	if (!ctx->bl_i2c)
+		return;
+	for (i = 0; i < FIRE_BL_NREGS; i++)
+		i2c_smbus_write_byte_data(ctx->bl_i2c, i, ctx->bl_regs[i]);
+}
+
 static int lcm_unprepare(struct drm_panel *panel)
 {
 	struct lcm *ctx = panel_to_lcm(panel);
@@ -228,6 +284,8 @@ static int lcm_prepare(struct drm_panel *panel)
 
 	lcm_panel_init(ctx);
 	gpiod_set_value(ctx->bl_en_gpio, 1);
+	usleep_range(2000, 2100);
+	fire_bl_restore(ctx);
 
 	ret = ctx->error;
 	if (ret < 0)
@@ -509,6 +567,10 @@ static int lcm_probe(struct mipi_dsi_device *dsi)
 			ctx->bl_en_gpio = NULL;
 		}
 	}
+	fire_bl_save(ctx);
+	/* without the saved setup, never switch it off */
+	if (!ctx->bl_i2c)
+		ctx->bl_en_gpio = NULL;
 
 	/* LK left the panel running; mediatek_v2 skips the first prepare. */
 	ctx->prepared = true;
