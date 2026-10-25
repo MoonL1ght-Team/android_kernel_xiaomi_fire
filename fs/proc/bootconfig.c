@@ -93,6 +93,21 @@ static int __init proc_boot_config_init(void)
 			kfree(saved_boot_config);
 			return len;
 		}
+#ifdef CONFIG_FIRE_DEBUG_REBOOT
+		/*
+		 * Xiaomi fire bring-up: fire_debug_reboot.no_charger=1 boots
+		 * Android instead of the off-mode charger, which LK may ask
+		 * for in the bootconfig too. Same length rewrite.
+		 */
+		if (strstr(saved_command_line, "fire_debug_reboot.no_charger=1")) {
+			char *mode = strstr(saved_boot_config,
+					    "androidboot.mode = \"charger\"");
+
+			if (mode)
+				memcpy(mode + strlen("androidboot.mode = \""),
+				       "normal\" ", 8);
+		}
+#endif
 	}
 
 	proc_create_single("bootconfig", 0, NULL, boot_config_proc_show);
