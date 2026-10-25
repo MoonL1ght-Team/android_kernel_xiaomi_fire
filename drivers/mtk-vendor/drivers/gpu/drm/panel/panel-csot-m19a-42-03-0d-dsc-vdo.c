@@ -41,6 +41,8 @@ struct lcm {
 	struct backlight_device *backlight;
 	struct gpio_desc *reset_gpio;
 	struct gpio_desc *biasp_gpio, *biasn_gpio;
+	/* enable pin of the KTD3136/LM3697 backlight driver (LK sets it up) */
+	struct gpio_desc *bl_en_gpio;
 
 	bool prepared;
 	bool enabled;
@@ -194,6 +196,11 @@ static int lcm_unprepare(struct drm_panel *panel)
 	lcm_cmd2_disable(ctx);
 	msleep(10);
 
+	/*
+	 * The backlight driver keeps the LEDs lit over the dark panel once
+	 * its PWM input floats; nothing else in the kernel turns it off.
+	 */
+	gpiod_set_value(ctx->bl_en_gpio, 0);
 	gpiod_set_value(ctx->biasn_gpio, 0);
 	gpiod_set_value(ctx->biasp_gpio, 0);
 	usleep_range(5000, 5100);
@@ -220,6 +227,7 @@ static int lcm_prepare(struct drm_panel *panel)
 	usleep_range(2000, 2100);
 
 	lcm_panel_init(ctx);
+	gpiod_set_value(ctx->bl_en_gpio, 1);
 
 	ret = ctx->error;
 	if (ret < 0)
@@ -449,7 +457,7 @@ static bool lcm_is_connected(struct device *dev)
 static int lcm_probe(struct mipi_dsi_device *dsi)
 {
 	struct device *dev = &dsi->dev;
-	struct device_node *backlight;
+	struct device_node *backlight, *bl_np;
 	struct lcm *ctx;
 	int ret;
 
@@ -487,6 +495,20 @@ static int lcm_probe(struct mipi_dsi_device *dsi)
 	if (IS_ERR(ctx->biasn_gpio))
 		return dev_err_probe(dev, PTR_ERR(ctx->biasn_gpio),
 				     "cannot get biasn gpio\n");
+
+	/* The panel node has no backlight link; use the driver IC's pin. */
+	bl_np = of_find_compatible_node(NULL, NULL, "mediatek,ktd,ktd3136");
+	if (bl_np) {
+		ctx->bl_en_gpio = fwnode_gpiod_get_index(of_fwnode_handle(bl_np),
+							 "enable", 0, GPIOD_OUT_HIGH,
+							 "backlight-en");
+		of_node_put(bl_np);
+		if (IS_ERR(ctx->bl_en_gpio)) {
+			dev_warn(dev, "no backlight enable gpio: %ld\n",
+				 PTR_ERR(ctx->bl_en_gpio));
+			ctx->bl_en_gpio = NULL;
+		}
+	}
 
 	/* LK left the panel running; mediatek_v2 skips the first prepare. */
 	ctx->prepared = true;
