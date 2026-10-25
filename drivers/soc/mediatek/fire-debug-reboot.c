@@ -27,6 +27,10 @@
  * deadlock of init can not be rebooted from adb or the keys. The warm
  * reboot keeps the log.
  *
+ * fire_debug_reboot.no_charger=1 turns LK's androidboot.mode=charger into
+ * normal, so the phone boots Android when powered on by a cable (no
+ * usable power key during bring-up).
+ *
  * fire_debug_reboot.nosuspend=1 holds a wakeup source forever: system
  * suspend resets the SoC until the SPM low power firmware is set up.
  *
@@ -82,6 +86,10 @@ MODULE_PARM_DESC(grep, "Report log lines with these ',' separated substrings");
 static bool hung_panic;
 module_param(hung_panic, bool, 0444);
 MODULE_PARM_DESC(hung_panic, "Panic when the hung task detector reports a task");
+
+static bool no_charger;
+module_param(no_charger, bool, 0444);
+MODULE_PARM_DESC(no_charger, "Boot Android instead of the off-mode charger");
 
 static bool nosuspend;
 module_param(nosuspend, bool, 0444);
@@ -207,6 +215,16 @@ static DECLARE_DELAYED_WORK(fire_debug_reboot_work, fire_debug_reboot_fn);
 
 static int __init fire_debug_reboot_init(void)
 {
+	char *mode;
+
+	/* Before init reads /proc/cmdline; same length, NUL-free */
+	mode = no_charger ? strstr(saved_command_line,
+				   "androidboot.mode=charger") : NULL;
+	if (mode) {
+		memcpy(mode + strlen("androidboot.mode="), "normal ", 7);
+		pr_info("fire-debug-reboot: charger boot turned into normal\n");
+	}
+
 	if (save_prev)
 		queue_delayed_work(system_unbound_wq, &fire_save_prev_work,
 				   HZ / 2);
