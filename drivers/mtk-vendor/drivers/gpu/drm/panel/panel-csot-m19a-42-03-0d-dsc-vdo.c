@@ -190,30 +190,30 @@ static int lcm_disable(struct drm_panel *panel)
  */
 static void fire_bl_save(struct lcm *ctx)
 {
-	/* the DT already has i2c clients for both; use whichever answers */
-	static const char *const compats[] = {
-		"mediatek,ktd,ktd3136", "mediatek,ti,lm3697",
-	};
+	static const unsigned short addrs[] = { 0x37, 0x36 };	/* KTD3136, LM3697 */
+	struct i2c_adapter *adap = i2c_get_adapter(FIRE_BL_BUS);
 	unsigned int i;
 	int v;
 
-	for (i = 0; i < ARRAY_SIZE(compats) && !ctx->bl_i2c; i++) {
-		struct device_node *np = of_find_compatible_node(NULL, NULL,
-								 compats[i]);
-		struct i2c_client *c = np ? of_find_i2c_device_by_node(np) : NULL;
+	if (!adap) {
+		dev_warn(ctx->dev, "fire-panel: no i2c%d adapter\n", FIRE_BL_BUS);
+		return;
+	}
+	for (i = 0; i < ARRAY_SIZE(addrs) && !ctx->bl_i2c; i++) {
+		struct i2c_client *c = i2c_new_dummy_device(adap, addrs[i]);
 
-		of_node_put(np);
-		if (!c)
+		if (IS_ERR(c))
 			continue;
 		v = i2c_smbus_read_byte_data(c, 0);
-		dev_info(ctx->dev, "fire-panel: %s at 0x%02x reg0: %d\n",
-			 compats[i], c->addr, v);
+		dev_info(ctx->dev, "fire-panel: i2c%d 0x%02x reg0: %d\n",
+			 FIRE_BL_BUS, addrs[i], v);
 		if (v < 0) {
-			put_device(&c->dev);
+			i2c_unregister_device(c);
 			continue;
 		}
 		ctx->bl_i2c = c;
 	}
+	i2c_put_adapter(adap);
 	if (!ctx->bl_i2c) {
 		dev_warn(ctx->dev, "fire-panel: no backlight driver on i2c%d\n",
 			 FIRE_BL_BUS);
