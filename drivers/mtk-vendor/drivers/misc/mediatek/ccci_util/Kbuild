@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-2.0
+# fire 6.12: built in, same objects as the vendor ccci_util_lib.ko
+ccflags-y += -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/ccci_util \
+	     -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/include/ \
+	     -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/eccci/inc/ \
+	     -DCCCI_KMODULE_ENABLE
+subdir-ccflags-y += -Wno-error
+LINUXINCLUDE := -I$(DEVICE_MODULES_PATH)/include $(LINUXINCLUDE)
+obj-y += ccci_util_lib.o
+ccci_util_lib-y := ccci_util_lib_fo.o ccci_util_lib_load_img.o \
+	ccci_util_lib_sys.o ccci_private_log.o ccci_util_lib_main.o \
+	ccci_util_ld_md_errno.o ccci_util_broadcast.o ccci_util_pin_broadcast.o \
+	ccci_util_sib.o ccci_util_lib_reserved_mem.o ccci_util_md_rat.o \
+	ccci_util_boot_args.o ccci_util_img_parsing.o ccci_util_md_mem.o

@@ -1,0 +1,49 @@
+load("//build/bazel_mgk_rules:mgk_ko.bzl", "define_mgk_ko")
+load("//build/kernel/kleaf:kernel.bzl", "ddk_headers")
+
+package(
+    default_visibility = [
+        "//visibility:public",
+    ],
+)
+
+exports_files([
+    "Kconfig",
+])
+
+filegroup(
+    name = "sources",
+    srcs = glob([
+        "**",
+    ], exclude = [
+        "BUILD.bazel",
+    ]),
+)
+
+ddk_headers(
+    name = "ccci_header",
+    hdrs = glob([
+        "**/*.h",
+    ]),
+    includes = [
+        ".",
+        "fsm",
+        "hif",
+        "inc",
+        "port",
+        "udc",
+        "udc/udc_lib_inc",
+    ],
+)
+
+define_mgk_ko(
+    name = "ccci_md_all",
+    outs = [
+        "ccci_auxadc.ko",
+        "ccci_md_all.ko",
+        "fsm/ccci_fsm_scp.ko",
+        "hif/ccci_ccif.ko",
+        "hif/ccci_cldma.ko",
+        "hif/ccci_dpmaif.ko",
+    ],
+)

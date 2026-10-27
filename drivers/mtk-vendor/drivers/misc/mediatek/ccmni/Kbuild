@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0
+ccflags-y += -DCCCI_CCMNI_MODULE \
+	     -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/ccmni/ \
+	     -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/eccci/inc/ \
+	     -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/include/
+subdir-ccflags-y += -Wno-error
+LINUXINCLUDE := -I$(DEVICE_MODULES_PATH)/include $(LINUXINCLUDE)
+ccflags-y += -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/rps/
+obj-y += ccmni.o ../rps/rps_perf.o

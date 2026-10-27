@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: GPL-2.0
+# fire 6.12: the vendor module layout (ccci_md_all, ccci_cldma,
+# ccci_ccif, ccci_auxadc), built in.
+M_ := $(DEVICE_MODULES_PATH)/drivers/misc/mediatek
+LINUXINCLUDE := -I$(DEVICE_MODULES_PATH)/include $(LINUXINCLUDE)
+subdir-ccflags-y += -Wno-error -DCCCI_KMODULE_ENABLE \
+	-I$(M_)/eccci/inc/ -I$(M_)/eccci/ -I$(M_)/eccci/fsm/ \
+	-I$(M_)/eccci/hif/ -I$(M_)/eccci/port/ -I$(M_)/eccci/udc \
+	-I$(M_)/eccci/udc/udc_lib_inc -I$(M_)/ccmni/ -I$(M_)/include/ \
+	-I$(M_)/conn_md/include/ -I$(M_)/scp/include/ -I$(M_)/mdpm/ \
+	-I$(M_)/pbm/ -I$(M_)/slbc/ -I$(M_)/memory-amms \
+	-I$(M_)/clkbuf/src -I$(DEVICE_MODULES_PATH)/drivers/clk/mediatek
+
+obj-y += ccci_md_all.o ccci_auxadc.o
+ccci_md_all-y := ccci_core.o ccci_bm.o ccci_modem.o udc/udc.o hif/ccci_hif.o \
+	port/port_cfg.o port/port_char.o port/port_ctlmsg.o port/port_udc.o \
+	port/port_ipc.o port/port_poller.o port/port_proxy.o port/port_rpc.o \
+	port/port_smem.o port/port_sysmsg.o port/ccci_swtp.o \
+	port/port_kernel_interface.o \
+	fsm/ccci_fsm.o fsm/ccci_fsm_ioctl.o fsm/ccci_fsm_monitor.o \
+	fsm/ccci_fsm_poller.o fsm/ccci_fsm_ee.o fsm/ccci_fsm_sys.o \
+	fsm/mdee_dumper_v1.o fsm/mdee_dumper_v2.o fsm/mdee_dumper_v3.o \
+	fsm/mdee_dumper_v5.o fsm/mdee_dumper_v6.o fsm/modem_sys1.o \
+	fsm/md_sys1_platform.o fsm/ap_md_reg_dump.o \
+	fsm/ap_md_reg_dump_gen93.o fsm/ap_md_reg_dump_gen95.o \
+	fsm/ap_md_reg_dump_gen97.o fsm/ap_md_mem.o
+
+obj-y += ccci_cldma.o ccci_ccif.o
+ccci_cldma-y := hif/ccci_cldma_plat.o hif/ccci_hif_cldma.o
+ccci_ccif-y := hif/ccci_ringbuf.o hif/ccci_hif_ccif.o
+

@@ -118,6 +118,29 @@ config FIRE_CHARGER
 	  Programs the stock limits into the SYV690 (BQ25890 compatible),
 	  turns off its I2C watchdog and reports charging to the battery.
 
+config FIRE_MTK_CCCI
+	bool "MediaTek CCCI modem interface (eccci, ccci_util, ccmni)"
+	depends on ARCH_MEDIATEK && NET
+	select PAGE_POOL
+	help
+	  The kernel_device_modules-6.6 modem stack, built in: boots the
+	  modem LK loaded and gives the RIL its ports and ccmni netdevs.
+
+config MTK_ECCCI_DRIVER
+	def_bool FIRE_MTK_CCCI
+
+config MTK_CCCI_DEVICES
+	def_bool FIRE_MTK_CCCI
+
+config MTK_NET_CCMNI
+	def_bool FIRE_MTK_CCCI
+
+config MTK_ECCCI_CLDMA
+	def_bool FIRE_MTK_CCCI
+
+config MTK_ECCCI_CCIF
+	def_bool FIRE_MTK_CCCI
+
 config FIRE_CPUFREQ
 	bool "MT6768 CPU DVFS from the AP (no SSPM)"
 	depends on CPU_FREQ && MFD_MT6397 && ARCH_MEDIATEK
