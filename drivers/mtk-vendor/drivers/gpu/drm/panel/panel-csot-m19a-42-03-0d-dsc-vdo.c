@@ -293,10 +293,27 @@ static void fire_bl_work(struct work_struct *work)
 	}
 	level = min(READ_ONCE(ctx->bl_level), 2047U);
 	if (ctx->ktd && ctx->bl_is_lm3697 && !ctx->ktd_off) {
-		i2c_smbus_write_byte_data(ctx->ktd, LM3697_CTRL_A_BRT_LSB,
-					  level & 0x7);
-		i2c_smbus_write_byte_data(ctx->ktd, LM3697_CTRL_A_BRT_MSB,
-					  level >> 3);
+		static bool dumped;
+		int r1, r2;
+
+		if (!dumped) {
+			u8 regs[0x15];
+			unsigned int i;
+
+			for (i = 0; i < sizeof(regs); i++)
+				regs[i] = i2c_smbus_read_byte_data(ctx->ktd, 0x10 + i);
+			pr_err("fire-panel: lm3697 0x10..0x24: %*ph\n",
+			       (int)sizeof(regs), regs);
+			dumped = true;
+		}
+		r1 = i2c_smbus_write_byte_data(ctx->ktd, LM3697_CTRL_A_BRT_LSB,
+					       level & 0x7);
+		r2 = i2c_smbus_write_byte_data(ctx->ktd, LM3697_CTRL_A_BRT_MSB,
+					       level >> 3);
+		pr_err("fire-panel: brightness %u (%d %d)\n", level, r1, r2);
+	} else {
+		pr_err("fire-panel: brightness %u not set (chip %d lm %d off %d)\n",
+		       level, !!ctx->ktd, ctx->bl_is_lm3697, ctx->ktd_off);
 	}
 	mutex_unlock(&ctx->bl_lock);
 }
