@@ -13,8 +13,6 @@
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/of.h>
-#include <linux/pm_wakeup.h>
-#include <linux/suspend.h>
 #include <linux/regmap.h>
 #include <linux/workqueue.h>
 
@@ -60,7 +58,6 @@ static struct {
 	struct regmap *map;
 	struct delayed_work work;
 	struct fire_charger_state st;
-	struct wakeup_source *ws;
 	bool ready;
 } fire_chg;
 
@@ -92,15 +89,6 @@ static void fire_chg_update(void)
 	st.vbus_mv = st.online ? 2600 + 100 * FIELD_GET(REG11_VBUSV, r11) : 0;
 	st.ichg_ma = 50 * FIELD_GET(REG12_ICHGR, r12);
 
-	/*
-	 * Stay awake while plugged in, as the stock USB driver does: suspend
-	 * takes USB (and adb) down with it.
-	 */
-	if (st.online && !fire_chg.ws->active)
-		__pm_stay_awake(fire_chg.ws);
-	else if (!st.online && fire_chg.ws->active)
-		__pm_relax(fire_chg.ws);
-
 	if (st.online != fire_chg.st.online || st.chrg_stat != fire_chg.st.chrg_stat)
 		pr_info("fire-charger: online %d type %u stat %u vbus %d mV ichg %d mA fault %#x\n",
 			st.online, st.vbus_type, st.chrg_stat, st.vbus_mv,
@@ -114,24 +102,6 @@ static void fire_chg_work(struct work_struct *work)
 	fire_chg_update();
 	schedule_delayed_work(&fire_chg.work, FIRE_CHG_POLL);
 }
-
-/*
- * After any wakeup (a cable being plugged in wakes us through the PMIC)
- * look at the charger right away, and stay up long enough to do so.
- */
-static int fire_chg_pm_notify(struct notifier_block *nb, unsigned long ev,
-			      void *unused)
-{
-	if (ev == PM_POST_SUSPEND) {
-		__pm_wakeup_event(fire_chg.ws, 3000);
-		mod_delayed_work(system_wq, &fire_chg.work, 0);
-	}
-	return NOTIFY_OK;
-}
-
-static struct notifier_block fire_chg_pm_nb = {
-	.notifier_call = fire_chg_pm_notify,
-};
 
 static int fire_chg_u32(struct device *dev, const char *prop, u32 def)
 {
@@ -181,13 +151,9 @@ static int fire_chg_probe(struct i2c_client *client)
 	dev_info(dev, "fire-charger: PN %lu, ilim %u mA, ichg %u mA, vreg %u mV\n",
 		 FIELD_GET(REG14_PN, pn), ilim, ichg, vreg);
 
-	fire_chg.ws = wakeup_source_register(dev, "fire-usb");
-	if (!fire_chg.ws)
-		return -ENOMEM;
 	INIT_DELAYED_WORK(&fire_chg.work, fire_chg_work);
 	fire_chg_update();
 	schedule_delayed_work(&fire_chg.work, FIRE_CHG_POLL);
-	register_pm_notifier(&fire_chg_pm_nb);
 	return 0;
 }
 

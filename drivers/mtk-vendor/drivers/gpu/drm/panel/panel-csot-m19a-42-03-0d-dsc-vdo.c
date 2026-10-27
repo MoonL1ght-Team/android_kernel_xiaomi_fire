@@ -42,10 +42,10 @@ struct lcm {
 	struct backlight_device *backlight;
 	struct gpio_desc *reset_gpio;
 	struct gpio_desc *biasp_gpio, *biasn_gpio;
-	/* backlight driver (KTD3136/LM3697), set up by LK; no kernel driver */
+	/* KTD3136 backlight driver, set up by LK; no kernel driver */
 	struct i2c_client *ktd;
 	u8 ktd_mode, ktd_lsb, ktd_msb;
-	bool ktd_off, bl_probed, bl_is_lm3697;
+	bool ktd_off;
 
 	bool prepared;
 	bool enabled;
@@ -180,74 +180,37 @@ static int lcm_disable(struct drm_panel *panel)
 }
 
 /*
- * The backlight driver (KTD3136 or LM3697, LK sets up whichever is
- * fitted) keeps its LEDs lit over the powered down panel. Switch it off
- * over I2C and put LK's values back on power up; the chip stays
- * powered, so the rest of its setup is kept.
- *  - KTD3136: what the stock ktd3136_bl does for brightness 0
- *    (ratio LSB/MSB 0, MODE 0x00);
- *  - LM3697: clear the bank enables (CTRL_ENABLE 0x24).
+ * The KTD3136 keeps its LEDs lit over the powered down panel. Switch it
+ * off over I2C the way the stock ktd3136_bl driver does for brightness
+ * 0 (ratio 0, MODE 0x00), and put LK's values back on power up.
  */
-#define KTD_REG_MODE		0x02
-#define KTD_REG_LSB		0x04
-#define KTD_REG_MSB		0x05
-#define LM3697_CTRL_ENABLE	0x24
-
-static void fire_bl_find(struct lcm *ctx)
-{
-	static const char *const compats[] = {
-		"mediatek,ktd,ktd3136", "mediatek,ti,lm3697",
-	};
-	unsigned int i;
-	int v;
-
-	for (i = 0; i < ARRAY_SIZE(compats); i++) {
-		struct device_node *np = of_find_compatible_node(NULL, NULL,
-								 compats[i]);
-		struct i2c_client *c = np ? of_find_i2c_device_by_node(np) : NULL;
-
-		of_node_put(np);
-		if (!c) {
-			pr_err("fire-panel: %s: no i2c client\n", compats[i]);
-			continue;
-		}
-		v = i2c_smbus_read_byte_data(c, 0);
-		pr_err("fire-panel: %s at %d-%04x: reg0 %d\n", compats[i],
-		       c->adapter->nr, c->addr, v);
-		if (v >= 0) {
-			ctx->ktd = c;
-			ctx->bl_is_lm3697 = i == 1;
-			return;
-		}
-		put_device(&c->dev);
-	}
-}
+#define KTD_REG_MODE	0x02
+#define KTD_REG_LSB	0x04
+#define KTD_REG_MSB	0x05
 
 static void fire_ktd_off(struct lcm *ctx)
 {
-	if (!ctx->ktd && !ctx->bl_probed) {
-		ctx->bl_probed = true;
-		fire_bl_find(ctx);
+	if (!ctx->ktd) {
+		struct device_node *np;
+
+		np = of_find_compatible_node(NULL, NULL, "mediatek,ktd,ktd3136");
+		ctx->ktd = np ? of_find_i2c_device_by_node(np) : NULL;
+		of_node_put(np);
+		if (!ctx->ktd)
+			return;
 	}
-	if (!ctx->ktd || ctx->ktd_off)
+	if (ctx->ktd_off)
 		return;
 
-	if (ctx->bl_is_lm3697) {
-		ctx->ktd_mode = i2c_smbus_read_byte_data(ctx->ktd,
-							 LM3697_CTRL_ENABLE);
-		if (i2c_smbus_write_byte_data(ctx->ktd, LM3697_CTRL_ENABLE, 0) < 0)
-			return;
-	} else {
-		ctx->ktd_mode = i2c_smbus_read_byte_data(ctx->ktd, KTD_REG_MODE);
-		ctx->ktd_lsb = i2c_smbus_read_byte_data(ctx->ktd, KTD_REG_LSB);
-		ctx->ktd_msb = i2c_smbus_read_byte_data(ctx->ktd, KTD_REG_MSB);
-		if (i2c_smbus_write_byte_data(ctx->ktd, KTD_REG_LSB, 0) < 0)
-			return;
-		i2c_smbus_write_byte_data(ctx->ktd, KTD_REG_MSB, 0);
-		i2c_smbus_write_byte_data(ctx->ktd, KTD_REG_MODE, 0x00);
-	}
+	ctx->ktd_mode = i2c_smbus_read_byte_data(ctx->ktd, KTD_REG_MODE);
+	ctx->ktd_lsb = i2c_smbus_read_byte_data(ctx->ktd, KTD_REG_LSB);
+	ctx->ktd_msb = i2c_smbus_read_byte_data(ctx->ktd, KTD_REG_MSB);
+	if (i2c_smbus_write_byte_data(ctx->ktd, KTD_REG_LSB, 0) < 0)
+		return;
+	i2c_smbus_write_byte_data(ctx->ktd, KTD_REG_MSB, 0);
+	i2c_smbus_write_byte_data(ctx->ktd, KTD_REG_MODE, 0x00);
 	ctx->ktd_off = true;
-	pr_err("fire-panel: backlight off (%#x %#x %#x)\n",
+	pr_err("fire-panel: backlight off (mode %#x ratio %#x/%#x)\n",
 	       ctx->ktd_mode, ctx->ktd_msb, ctx->ktd_lsb);
 }
 
@@ -255,14 +218,9 @@ static void fire_ktd_on(struct lcm *ctx)
 {
 	if (!ctx->ktd || !ctx->ktd_off)
 		return;
-	if (ctx->bl_is_lm3697) {
-		i2c_smbus_write_byte_data(ctx->ktd, LM3697_CTRL_ENABLE,
-					  ctx->ktd_mode);
-	} else {
-		i2c_smbus_write_byte_data(ctx->ktd, KTD_REG_MODE, ctx->ktd_mode);
-		i2c_smbus_write_byte_data(ctx->ktd, KTD_REG_MSB, ctx->ktd_msb);
-		i2c_smbus_write_byte_data(ctx->ktd, KTD_REG_LSB, ctx->ktd_lsb);
-	}
+	i2c_smbus_write_byte_data(ctx->ktd, KTD_REG_MODE, ctx->ktd_mode);
+	i2c_smbus_write_byte_data(ctx->ktd, KTD_REG_MSB, ctx->ktd_msb);
+	i2c_smbus_write_byte_data(ctx->ktd, KTD_REG_LSB, ctx->ktd_lsb);
 	ctx->ktd_off = false;
 }
 
