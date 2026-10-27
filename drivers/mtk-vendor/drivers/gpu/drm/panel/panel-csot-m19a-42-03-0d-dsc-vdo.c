@@ -273,11 +273,12 @@ static void fire_ktd_on(struct lcm *ctx)
 
 /*
  * On the LM3697 boards the LEDs follow the chip's own brightness
- * registers, not the 0x51 DCS value: write it there too (11 bit, bank A
+ * registers, not the 0x51 DCS value: write it there too (11 bit, bank B
  * LSB bits 2:0 + MSB), as the stock mtk_leds lm3697 backend does.
  */
-#define LM3697_CTRL_A_BRT_LSB	0x20
-#define LM3697_CTRL_A_BRT_MSB	0x21
+/* LK puts both LED strings on bank B (OUTPUT_CONFIG 0x03) */
+#define LM3697_CTRL_B_BRT_LSB	0x22
+#define LM3697_CTRL_B_BRT_MSB	0x23
 
 static struct lcm *fire_lcm;
 
@@ -292,7 +293,8 @@ static void fire_bl_work(struct work_struct *work)
 		fire_bl_find(ctx);
 	}
 	level = min(READ_ONCE(ctx->bl_level), 2047U);
-	if (ctx->ktd && ctx->bl_is_lm3697 && !ctx->ktd_off) {
+	/* 0 comes with display recovery and power down, handled above */
+	if (ctx->ktd && ctx->bl_is_lm3697 && !ctx->ktd_off && level) {
 		static bool dumped;
 		int r1, r2;
 
@@ -306,9 +308,9 @@ static void fire_bl_work(struct work_struct *work)
 			       (int)sizeof(regs), regs);
 			dumped = true;
 		}
-		r1 = i2c_smbus_write_byte_data(ctx->ktd, LM3697_CTRL_A_BRT_LSB,
+		r1 = i2c_smbus_write_byte_data(ctx->ktd, LM3697_CTRL_B_BRT_LSB,
 					       level & 0x7);
-		r2 = i2c_smbus_write_byte_data(ctx->ktd, LM3697_CTRL_A_BRT_MSB,
+		r2 = i2c_smbus_write_byte_data(ctx->ktd, LM3697_CTRL_B_BRT_MSB,
 					       level >> 3);
 		pr_err("fire-panel: brightness %u (%d %d)\n", level, r1, r2);
 	} else {
@@ -327,6 +329,7 @@ static int fire_bl_update_status(struct backlight_device *bl)
 {
 	struct lcm *ctx = bl_get_data(bl);
 
+	pr_err("fire-panel: panel0-backlight %d\n", backlight_get_brightness(bl));
 	WRITE_ONCE(ctx->bl_level, backlight_get_brightness(bl));
 	schedule_work(&ctx->bl_work);
 	return 0;
@@ -516,6 +519,7 @@ static int lcm_setbacklight_cmdq(void *dsi, dcs_write_gce cb,
 		return -EINVAL;
 
 	cb(dsi, handle, bl_tb, ARRAY_SIZE(bl_tb));
+	pr_err("fire-panel: drm backlight %u\n", level);
 	if (fire_lcm) {
 		WRITE_ONCE(fire_lcm->bl_level, level);
 		schedule_work(&fire_lcm->bl_work);
