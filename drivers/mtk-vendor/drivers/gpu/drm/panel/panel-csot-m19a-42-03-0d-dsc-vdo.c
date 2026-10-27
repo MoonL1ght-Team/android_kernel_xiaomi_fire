@@ -307,7 +307,7 @@ static void fire_bl_work(struct work_struct *work)
 
 			for (i = 0; i < sizeof(regs); i++)
 				regs[i] = i2c_smbus_read_byte_data(ctx->ktd, 0x10 + i);
-			pr_err("fire-panel: lm3697 0x10..0x24: %*ph\n",
+			pr_debug("fire-panel: lm3697 0x10..0x24: %*ph\n",
 			       (int)sizeof(regs), regs);
 			dumped = true;
 		}
@@ -315,9 +315,9 @@ static void fire_bl_work(struct work_struct *work)
 					       level & 0x7);
 		r2 = i2c_smbus_write_byte_data(ctx->ktd, LM3697_CTRL_B_BRT_MSB,
 					       level >> 3);
-		pr_err("fire-panel: brightness %u (%d %d)\n", level, r1, r2);
+		pr_debug("fire-panel: brightness %u (%d %d)\n", level, r1, r2);
 	} else {
-		pr_err("fire-panel: brightness %u not set (chip %d lm %d off %d)\n",
+		pr_debug("fire-panel: brightness %u not set (chip %d lm %d off %d)\n",
 		       level, !!ctx->ktd, ctx->bl_is_lm3697, ctx->ktd_off);
 	}
 	mutex_unlock(&ctx->bl_lock);
@@ -332,7 +332,7 @@ static int fire_bl_update_status(struct backlight_device *bl)
 {
 	struct lcm *ctx = bl_get_data(bl);
 
-	pr_err("fire-panel: panel0-backlight %d\n", backlight_get_brightness(bl));
+	pr_debug("fire-panel: panel0-backlight %d\n", backlight_get_brightness(bl));
 	WRITE_ONCE(ctx->bl_level, backlight_get_brightness(bl));
 	schedule_work(&ctx->bl_work);
 	return 0;
@@ -353,7 +353,7 @@ static int fire_bl_led_set(struct led_classdev *cdev,
 {
 	struct lcm *ctx = container_of(cdev, struct lcm, bl_led);
 
-	pr_err("fire-panel: lcd-backlight %d\n", value);
+	pr_debug("fire-panel: lcd-backlight %d\n", value);
 	WRITE_ONCE(ctx->bl_level, value * 2047 / 255);
 	schedule_work(&ctx->bl_work);
 	return 0;
@@ -559,7 +559,7 @@ static int lcm_setbacklight_cmdq(void *dsi, dcs_write_gce cb,
 		return -EINVAL;
 
 	cb(dsi, handle, bl_tb, ARRAY_SIZE(bl_tb));
-	pr_err("fire-panel: drm backlight %u\n", level);
+	pr_debug("fire-panel: drm backlight %u\n", level);
 	if (fire_lcm) {
 		WRITE_ONCE(fire_lcm->bl_level, level);
 		schedule_work(&fire_lcm->bl_work);
