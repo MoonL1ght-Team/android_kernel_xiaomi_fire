@@ -301,6 +301,25 @@ static void fire_bl_work(struct work_struct *work)
 	mutex_unlock(&ctx->bl_lock);
 }
 
+/*
+ * Android (Lineage lights HAL) sets the brightness through
+ * /sys/class/backlight/panel0-backlight; there was none, so nothing
+ * reached the LEDs. 11 bit, like the DCS value and the LM3697.
+ */
+static int fire_bl_update_status(struct backlight_device *bl)
+{
+	struct lcm *ctx = bl_get_data(bl);
+
+	WRITE_ONCE(ctx->bl_level, backlight_get_brightness(bl));
+	schedule_work(&ctx->bl_work);
+	return 0;
+}
+
+static const struct backlight_ops fire_bl_ops = {
+	.options = BL_CORE_SUSPENDRESUME,
+	.update_status = fire_bl_update_status,
+};
+
 static int lcm_unprepare(struct drm_panel *panel)
 {
 	struct lcm *ctx = panel_to_lcm(panel);
@@ -604,6 +623,20 @@ static int lcm_probe(struct mipi_dsi_device *dsi)
 	mipi_dsi_set_drvdata(dsi, ctx);
 	ctx->dev = dev;
 	fire_lcm = ctx;
+	{
+		struct backlight_properties props = {
+			.type = BACKLIGHT_RAW,
+			.max_brightness = 2047,
+			.brightness = 1024,
+		};
+		struct backlight_device *bl;
+
+		bl = devm_backlight_device_register(dev, "panel0-backlight",
+						    dev, ctx, &fire_bl_ops,
+						    &props);
+		if (IS_ERR(bl))
+			dev_warn(dev, "no panel0-backlight: %ld\n", PTR_ERR(bl));
+	}
 	dsi->lanes = 4;
 	dsi->format = MIPI_DSI_FMT_RGB888;
 	dsi->mode_flags = MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_SYNC_PULSE;
