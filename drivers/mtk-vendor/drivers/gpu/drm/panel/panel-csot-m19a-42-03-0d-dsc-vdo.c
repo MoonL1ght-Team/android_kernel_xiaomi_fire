@@ -11,6 +11,7 @@
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
+#include <linux/workqueue.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_graph.h>
@@ -46,6 +47,10 @@ struct lcm {
 	struct i2c_client *ktd;
 	u8 ktd_mode, ktd_lsb, ktd_msb;
 	bool ktd_off, bl_probed, bl_is_lm3697;
+	/* brightness from mediatek_v2 (11 bit), applied to the LM3697 */
+	struct work_struct bl_work;
+	struct mutex bl_lock;
+	unsigned int bl_level;
 
 	bool prepared;
 	bool enabled;
@@ -266,6 +271,36 @@ static void fire_ktd_on(struct lcm *ctx)
 	ctx->ktd_off = false;
 }
 
+/*
+ * On the LM3697 boards the LEDs follow the chip's own brightness
+ * registers, not the 0x51 DCS value: write it there too (11 bit, bank A
+ * LSB bits 2:0 + MSB), as the stock mtk_leds lm3697 backend does.
+ */
+#define LM3697_CTRL_A_BRT_LSB	0x20
+#define LM3697_CTRL_A_BRT_MSB	0x21
+
+static struct lcm *fire_lcm;
+
+static void fire_bl_work(struct work_struct *work)
+{
+	struct lcm *ctx = container_of(work, struct lcm, bl_work);
+	unsigned int level;
+
+	mutex_lock(&ctx->bl_lock);
+	if (!ctx->ktd && !ctx->bl_probed) {
+		ctx->bl_probed = true;
+		fire_bl_find(ctx);
+	}
+	level = min(READ_ONCE(ctx->bl_level), 2047U);
+	if (ctx->ktd && ctx->bl_is_lm3697 && !ctx->ktd_off) {
+		i2c_smbus_write_byte_data(ctx->ktd, LM3697_CTRL_A_BRT_LSB,
+					  level & 0x7);
+		i2c_smbus_write_byte_data(ctx->ktd, LM3697_CTRL_A_BRT_MSB,
+					  level >> 3);
+	}
+	mutex_unlock(&ctx->bl_lock);
+}
+
 static int lcm_unprepare(struct drm_panel *panel)
 {
 	struct lcm *ctx = panel_to_lcm(panel);
@@ -286,7 +321,9 @@ static int lcm_unprepare(struct drm_panel *panel)
 	lcm_cmd2_disable(ctx);
 	msleep(10);
 
+	mutex_lock(&ctx->bl_lock);
 	fire_ktd_off(ctx);
+	mutex_unlock(&ctx->bl_lock);
 	gpiod_set_value(ctx->biasn_gpio, 0);
 	gpiod_set_value(ctx->biasp_gpio, 0);
 	usleep_range(5000, 5100);
@@ -313,7 +350,11 @@ static int lcm_prepare(struct drm_panel *panel)
 	usleep_range(2000, 2100);
 
 	lcm_panel_init(ctx);
+	mutex_lock(&ctx->bl_lock);
 	fire_ktd_on(ctx);
+	mutex_unlock(&ctx->bl_lock);
+	if (ctx->bl_level)
+		schedule_work(&ctx->bl_work);
 
 	ret = ctx->error;
 	if (ret < 0)
@@ -439,6 +480,10 @@ static int lcm_setbacklight_cmdq(void *dsi, dcs_write_gce cb,
 		return -EINVAL;
 
 	cb(dsi, handle, bl_tb, ARRAY_SIZE(bl_tb));
+	if (fire_lcm) {
+		WRITE_ONCE(fire_lcm->bl_level, level);
+		schedule_work(&fire_lcm->bl_work);
+	}
 	return 0;
 }
 
@@ -553,9 +598,12 @@ static int lcm_probe(struct mipi_dsi_device *dsi)
 	ctx = devm_kzalloc(dev, sizeof(*ctx), GFP_KERNEL);
 	if (!ctx)
 		return -ENOMEM;
+	mutex_init(&ctx->bl_lock);
+	INIT_WORK(&ctx->bl_work, fire_bl_work);
 
 	mipi_dsi_set_drvdata(dsi, ctx);
 	ctx->dev = dev;
+	fire_lcm = ctx;
 	dsi->lanes = 4;
 	dsi->format = MIPI_DSI_FMT_RGB888;
 	dsi->mode_flags = MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_SYNC_PULSE;
