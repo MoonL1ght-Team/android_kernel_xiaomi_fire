@@ -127,6 +127,7 @@ int fire_gauge_soc_load(void)
 
 	if (!map || regmap_read(map, RTC_AL_MTH, &v))
 		return -ENODEV;
+	pr_info("fire-gauge: RTC_AL_MTH %#x\n", v);
 	v >>= 8;
 	if (!(v & RTC_FGSOC_VALID) || (v & 0x7f) > 100)
 		return -ENODATA;
@@ -198,6 +199,12 @@ void fire_gauge_soc_save(int soc)
 		goto out;
 	/* latch into the RTC domain */
 	fire_rtc_latch(map);
+	{
+		unsigned int rb = 0;
+
+		regmap_read(map, RTC_AL_MTH, &rb);
+		pr_info("fire-gauge: saved %d%%, RTC_AL_MTH now %#x\n", soc, rb);
+	}
 out:
 	mutex_unlock(&fire_gauge_lock);
 }
