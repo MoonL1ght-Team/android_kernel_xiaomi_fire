@@ -32,6 +32,8 @@
 #define FIRE_BAT_R_MOHM		150
 /* below this, discharging, Android is told 0% so it shuts down */
 #define FIRE_VBAT_EMPTY_MV	3400
+/* how far the RTC level may be from the boot voltage estimate */
+#define FIRE_SOC_TRUST		30
 
 struct fire_ocv_point {
 	int mv;
@@ -55,6 +57,7 @@ struct fire_battery {
 	int charge;		/* 0.1 mAh left */
 	int car_ref, charge_ref;	/* counter and charge at the anchor */
 	int empty_cnt;
+	int saved_soc;		/* last level written to the RTC */
 };
 
 static int fire_adc_mv(struct iio_dev *adc, int channel, int *mv)
@@ -123,12 +126,22 @@ static void fire_battery_update(struct fire_battery *fb)
 	fb->ma = ma;
 	if (!fb->have_gauge) {
 		int ocv = fb->vbat_mv - ma * FIRE_BAT_R_MOHM / 1000;
+		int est = fire_ocv_percent(ocv);
+		int saved = fire_gauge_soc_load();
+		int soc = est;
 
+		/*
+		 * The voltage under the boot load is a rough guess; prefer
+		 * the level saved in the RTC unless it is far off (battery
+		 * swapped, long time off).
+		 */
+		if (saved >= 0 && abs(saved - est) <= FIRE_SOC_TRUST)
+			soc = saved;
 		fb->have_gauge = true;
-		fire_battery_anchor(fb, car,
-				    fire_ocv_percent(ocv) * FIRE_BAT_Q / 100);
-		pr_info("fire-battery: vbat %d mV, %d mA, ocv %d mV -> %d%%\n",
-			fb->vbat_mv, ma, ocv, fire_ocv_percent(ocv));
+		fire_battery_anchor(fb, car, soc * FIRE_BAT_Q / 100);
+		fb->saved_soc = soc;
+		pr_info("fire-battery: vbat %d mV, %d mA, ocv %d mV -> %d%%, rtc %d%%, using %d%%\n",
+			fb->vbat_mv, ma, ocv, est, saved, soc);
 		return;
 	}
 
@@ -138,6 +151,11 @@ static void fire_battery_update(struct fire_battery *fb)
 		fire_battery_anchor(fb, car,
 				    charger && st.chrg_stat == 3 ? FIRE_BAT_Q :
 				    fb->charge);
+
+	if (DIV_ROUND_CLOSEST(fb->charge * 100, FIRE_BAT_Q) != fb->saved_soc) {
+		fb->saved_soc = DIV_ROUND_CLOSEST(fb->charge * 100, FIRE_BAT_Q);
+		fire_gauge_soc_save(fb->saved_soc);
+	}
 
 	if (fb->vbat_mv < FIRE_VBAT_EMPTY_MV && fb->ma <= 0)
 		fb->empty_cnt++;

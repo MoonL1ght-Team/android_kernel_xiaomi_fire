@@ -7,6 +7,7 @@
  * driver does (RG_FGADC_*, R_FG 5 mOhm, CAR_TUNE 1.00).
  */
 
+#include <linux/delay.h>
 #include <linux/mfd/mt6397/core.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
@@ -100,4 +101,52 @@ int fire_gauge_read(int *ma, int *car_01mah)
 	car = (s64)raw * UNIT_FGCAR * FIRE_RFG_SCALE;
 	*car_01mah = div_s64(car, 100000);
 	return 0;
+}
+
+/*
+ * The UI level is kept across reboots in the RTC, as the stock 4.19
+ * gauge does (RTC_FGSOC spare: RTC_AL_MTH bits 15:8, bit 7 = valid,
+ * bits 6:0 = percent). The RTC runs from the battery.
+ */
+#define MT6358_RTC_BASE		0x588
+#define RTC_BBPU		(MT6358_RTC_BASE + 0x00)
+#define  RTC_BBPU_CBUSY		BIT(6)
+#define RTC_AL_MTH		(MT6358_RTC_BASE + 0x22)
+#define RTC_WRTGR		(MT6358_RTC_BASE + 0x3a)
+#define RTC_FGSOC_VALID		0x80
+
+int fire_gauge_soc_load(void)
+{
+	struct regmap *map = fire_gauge_regmap();
+	unsigned int v;
+
+	if (!map || regmap_read(map, RTC_AL_MTH, &v))
+		return -ENODEV;
+	v >>= 8;
+	if (!(v & RTC_FGSOC_VALID) || (v & 0x7f) > 100)
+		return -ENODATA;
+	return v & 0x7f;
+}
+
+void fire_gauge_soc_save(int soc)
+{
+	struct regmap *map = fire_gauge_regmap();
+	unsigned int v;
+	int i;
+
+	if (!map)
+		return;
+	mutex_lock(&fire_gauge_lock);
+	if (regmap_update_bits(map, RTC_AL_MTH, 0xff00,
+			       (RTC_FGSOC_VALID | clamp(soc, 0, 100)) << 8))
+		goto out;
+	/* latch into the RTC domain */
+	regmap_write(map, RTC_WRTGR, 1);
+	for (i = 0; i < 100; i++) {
+		if (regmap_read(map, RTC_BBPU, &v) || !(v & RTC_BBPU_CBUSY))
+			break;
+		udelay(10);
+	}
+out:
+	mutex_unlock(&fire_gauge_lock);
 }

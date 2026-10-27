@@ -21,5 +21,7 @@ static inline int fire_charger_get(struct fire_charger_state *st)
 
 /* fire_gauge.c: MT6358 coulomb counter */
 int fire_gauge_read(int *ma, int *car_01mah);
+int fire_gauge_soc_load(void);
+void fire_gauge_soc_save(int soc);
 
 #endif
