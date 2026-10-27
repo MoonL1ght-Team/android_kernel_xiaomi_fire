@@ -61,6 +61,7 @@ static struct {
 	struct delayed_work work;
 	struct fire_charger_state st;
 	struct wakeup_source *ws;
+	unsigned long next_dump;
 	bool ready;
 } fire_chg;
 
@@ -101,10 +102,17 @@ static void fire_chg_update(void)
 	else if (!st.online && fire_chg.ws->active)
 		__pm_relax(fire_chg.ws);
 
-	if (st.online != fire_chg.st.online || st.chrg_stat != fire_chg.st.chrg_stat)
+	if (st.online != fire_chg.st.online || st.chrg_stat != fire_chg.st.chrg_stat ||
+	    time_after(jiffies, fire_chg.next_dump)) {
+		u8 regs[REG14 + 1];
+
 		pr_info("fire-charger: online %d type %u stat %u vbus %d mV ichg %d mA fault %#x\n",
 			st.online, st.vbus_type, st.chrg_stat, st.vbus_mv,
 			st.ichg_ma, st.faults);
+		if (!regmap_bulk_read(fire_chg.map, 0, regs, sizeof(regs)))
+			pr_info("fire-charger: regs %*ph\n", (int)sizeof(regs), regs);
+		fire_chg.next_dump = jiffies + 60 * HZ;
+	}
 	fire_chg.st = st;
 	WRITE_ONCE(fire_chg.ready, true);
 }
