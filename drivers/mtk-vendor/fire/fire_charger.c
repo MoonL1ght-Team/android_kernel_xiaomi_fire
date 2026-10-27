@@ -58,6 +58,7 @@ static const struct regmap_config fire_chg_regmap = {
 
 static struct {
 	struct regmap *map;
+	unsigned int iinlim;	/* REG00 IINLIM field for the DT input limit */
 	struct delayed_work work;
 	struct fire_charger_state st;
 	struct wakeup_source *ws;
@@ -92,6 +93,22 @@ static void fire_chg_update(void)
 	st.vbat_mv = 2304 + 20 * FIELD_GET(REG0E_BATV, r0e);
 	st.vbus_mv = st.online ? 2600 + 100 * FIELD_GET(REG11_VBUSV, r11) : 0;
 	st.ichg_ma = 50 * FIELD_GET(REG12_ICHGR, r12);
+
+	/*
+	 * The chip's own input detection sets IINLIM after every plug in.
+	 * BC1.2 does not work here (the stock driver first switches D+/D-
+	 * to the charger with the usb_switch GPIOs), so even wall adapters
+	 * come out as "unknown adapter" with 500 mA. Put the DT limit back
+	 * unless it is a real SDP; VINDPM (4.5 V) backs off on weak sources.
+	 */
+	if (st.online && st.vbus_type != 1) {
+		unsigned int r00;
+
+		if (!regmap_read(fire_chg.map, REG00, &r00) &&
+		    FIELD_GET(REG00_IINLIM, r00) != fire_chg.iinlim)
+			regmap_update_bits(fire_chg.map, REG00, REG00_IINLIM,
+					   FIELD_PREP(REG00_IINLIM, fire_chg.iinlim));
+	}
 
 	/*
 	 * Stay awake while plugged in, as the stock USB driver does: suspend
@@ -172,8 +189,9 @@ static int fire_chg_probe(struct i2c_client *client)
 
 	/* watchdog off first, so the limits stay */
 	ret = regmap_update_bits(fire_chg.map, REG07, REG07_WATCHDOG, 0);
+	fire_chg.iinlim = (ilim - 100) / 50;
 	ret = ret ?: regmap_update_bits(fire_chg.map, REG00, REG00_IINLIM,
-					FIELD_PREP(REG00_IINLIM, (ilim - 100) / 50));
+					FIELD_PREP(REG00_IINLIM, fire_chg.iinlim));
 	ret = ret ?: regmap_update_bits(fire_chg.map, REG04, REG04_ICHG,
 					FIELD_PREP(REG04_ICHG, ichg / 64));
 	ret = ret ?: regmap_update_bits(fire_chg.map, REG06, REG06_VREG,
