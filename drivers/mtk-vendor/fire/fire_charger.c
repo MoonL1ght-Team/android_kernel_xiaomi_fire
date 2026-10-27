@@ -127,7 +127,7 @@ static void fire_chg_update(void)
 			st.online, st.vbus_type, st.chrg_stat, st.vbus_mv,
 			st.ichg_ma, st.faults);
 		if (!regmap_bulk_read(fire_chg.map, 0, regs, sizeof(regs)))
-			pr_info("fire-charger: regs %*ph\n", (int)sizeof(regs), regs);
+			pr_debug("fire-charger: regs %*ph\n", (int)sizeof(regs), regs);
 		fire_chg.next_dump = jiffies + 60 * HZ;
 	}
 	fire_chg.st = st;
