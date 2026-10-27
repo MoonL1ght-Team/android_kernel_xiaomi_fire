@@ -7,11 +7,13 @@
  * driver does (RG_FGADC_*, R_FG 5 mOhm, CAR_TUNE 1.00).
  */
 
+#include <linux/bitfield.h>
 #include <linux/delay.h>
 #include <linux/mfd/mt6397/core.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
+#include <linux/reboot.h>
 #include <linux/regmap.h>
 
 #include "fire_charger.h"
@@ -114,6 +116,9 @@ int fire_gauge_read(int *ma, int *car_01mah)
 #define RTC_AL_MTH		(MT6358_RTC_BASE + 0x22)
 #define RTC_WRTGR		(MT6358_RTC_BASE + 0x3a)
 #define RTC_FGSOC_VALID		0x80
+#define RTC_PDN1		(MT6358_RTC_BASE + 0x2c)
+#define  RTC_PDN1_RECOVERY	GENMASK(5, 4)
+#define  RTC_PDN1_FAST_BOOT	BIT(13)
 
 int fire_gauge_soc_load(void)
 {
@@ -128,11 +133,62 @@ int fire_gauge_soc_load(void)
 	return v & 0x7f;
 }
 
+static void fire_rtc_latch(struct regmap *map)
+{
+	unsigned int v;
+	int i;
+
+	regmap_write(map, RTC_WRTGR, 1);
+	for (i = 0; i < 100; i++) {
+		if (regmap_read(map, RTC_BBPU, &v) || !(v & RTC_BBPU_CBUSY))
+			break;
+		udelay(10);
+	}
+}
+
+/*
+ * LK ignores the reboot command string and picks fastboot or recovery
+ * from RTC_PDN1 instead, which the stock kernel sets in rtc_mark_fast()
+ * and rtc_mark_recovery().
+ */
+static int fire_rtc_reboot(struct notifier_block *nb, unsigned long action,
+			   void *cmd)
+{
+	struct regmap *map = fire_gauge_regmap();
+	unsigned int mask = 0, val = 0;
+
+	if (action != SYS_RESTART || !cmd || !map)
+		return NOTIFY_DONE;
+	if (!strcmp(cmd, "bootloader")) {
+		mask = val = RTC_PDN1_FAST_BOOT;
+	} else if (!strcmp(cmd, "recovery")) {
+		mask = RTC_PDN1_RECOVERY;
+		val = FIELD_PREP(RTC_PDN1_RECOVERY, 1);
+	}
+	if (!mask)
+		return NOTIFY_DONE;
+
+	mutex_lock(&fire_gauge_lock);
+	if (!regmap_update_bits(map, RTC_PDN1, mask, val))
+		fire_rtc_latch(map);
+	mutex_unlock(&fire_gauge_lock);
+	pr_info("fire-gauge: reboot to %s marked in the RTC\n", (char *)cmd);
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block fire_rtc_reboot_nb = {
+	.notifier_call = fire_rtc_reboot,
+};
+
+static int __init fire_rtc_reboot_init(void)
+{
+	return register_reboot_notifier(&fire_rtc_reboot_nb);
+}
+late_initcall(fire_rtc_reboot_init);
+
 void fire_gauge_soc_save(int soc)
 {
 	struct regmap *map = fire_gauge_regmap();
-	unsigned int v;
-	int i;
 
 	if (!map)
 		return;
@@ -141,12 +197,7 @@ void fire_gauge_soc_save(int soc)
 			       (RTC_FGSOC_VALID | clamp(soc, 0, 100)) << 8))
 		goto out;
 	/* latch into the RTC domain */
-	regmap_write(map, RTC_WRTGR, 1);
-	for (i = 0; i < 100; i++) {
-		if (regmap_read(map, RTC_BBPU, &v) || !(v & RTC_BBPU_CBUSY))
-			break;
-		udelay(10);
-	}
+	fire_rtc_latch(map);
 out:
 	mutex_unlock(&fire_gauge_lock);
 }
