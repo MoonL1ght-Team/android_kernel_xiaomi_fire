@@ -11,6 +11,8 @@
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
+#include <linux/leds.h>
+#include <linux/of_platform.h>
 #include <linux/workqueue.h>
 #include <linux/module.h>
 #include <linux/of.h>
@@ -51,6 +53,7 @@ struct lcm {
 	struct work_struct bl_work;
 	struct mutex bl_lock;
 	unsigned int bl_level;
+	struct led_classdev bl_led;
 
 	bool prepared;
 	bool enabled;
@@ -339,6 +342,43 @@ static const struct backlight_ops fire_bl_ops = {
 	.options = BL_CORE_SUSPENDRESUME,
 	.update_status = fire_bl_update_status,
 };
+
+/*
+ * Android writes the brightness to the lcd-backlight LED of the DT
+ * node /soc/mtk_leds (0-255): only that sysfs path has the sysfs_leds
+ * label the lights HAL may write. Scale it to the 11-bit LM3697 level.
+ */
+static int fire_bl_led_set(struct led_classdev *cdev,
+			   enum led_brightness value)
+{
+	struct lcm *ctx = container_of(cdev, struct lcm, bl_led);
+
+	pr_err("fire-panel: lcd-backlight %d\n", value);
+	WRITE_ONCE(ctx->bl_level, value * 2047 / 255);
+	schedule_work(&ctx->bl_work);
+	return 0;
+}
+
+static void fire_bl_led_register(struct lcm *ctx)
+{
+	struct device_node *np = of_find_node_by_path("/soc/mtk_leds");
+	struct platform_device *pdev = np ? of_find_device_by_node(np) : NULL;
+	int ret;
+
+	of_node_put(np);
+	if (!pdev) {
+		dev_warn(ctx->dev, "fire-panel: no /soc/mtk_leds device\n");
+		return;
+	}
+	ctx->bl_led.name = "lcd-backlight";
+	ctx->bl_led.max_brightness = 255;
+	ctx->bl_led.brightness = 255;
+	ctx->bl_led.brightness_set_blocking = fire_bl_led_set;
+	ret = devm_led_classdev_register(&pdev->dev, &ctx->bl_led);
+	if (ret)
+		dev_warn(ctx->dev, "fire-panel: lcd-backlight: %d\n", ret);
+	put_device(&pdev->dev);
+}
 
 static int lcm_unprepare(struct drm_panel *panel)
 {
@@ -644,6 +684,7 @@ static int lcm_probe(struct mipi_dsi_device *dsi)
 	mipi_dsi_set_drvdata(dsi, ctx);
 	ctx->dev = dev;
 	fire_lcm = ctx;
+	fire_bl_led_register(ctx);
 	{
 		struct backlight_properties props = {
 			.type = BACKLIGHT_RAW,
