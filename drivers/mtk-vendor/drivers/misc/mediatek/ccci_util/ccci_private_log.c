@@ -374,6 +374,9 @@ static ssize_t ccci_dump_fops_write(struct file *file,
 	return size;
 }
 
+static bool fire_ccci_dump_kmsg;
+module_param(fire_ccci_dump_kmsg, bool, 0644);
+
 int ccci_dump_write(unsigned int buf_type, unsigned int flag, const char *fmt, ...)
 {
 	va_list args;
@@ -464,6 +467,10 @@ int ccci_dump_write(unsigned int buf_type, unsigned int flag, const char *fmt, .
 					CCCI_LOG_MAX_WRITE - write_len,
 					fmt, args);
 	va_end(args);
+
+	/* fire: mirror the ccci dump buffers to kmsg (debug) */
+	if (fire_ccci_dump_kmsg)
+		pr_info("ccci-dump%u: %s", buf_type, temp_log);
 
 	if (write_len >= CCCI_LOG_MAX_WRITE) {
 		pr_notice("%s-%d: string too long, write_len(%d) is over max(%d)\n",
