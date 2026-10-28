@@ -26,6 +26,10 @@
 #define  VCOREFS_SMC_CMD_INIT		0
 #define  VCOREFS_SMC_CMD_START		1
 
+/* DVFSRC_SW_REQ (stock mt6768_regs): DRAM level 1:0, vcore level 3:2 */
+#define DVFSRC_SW_REQ			0x4
+#define  DVFSRC_SW_REQ_MAX		0xe
+
 /* SPM firmware index: 1 is pcm_allinone_lp4_3600 (LPDDR4X 3600) */
 static int spmfw_idx = 1;
 module_param(spmfw_idx, int, 0444);
@@ -63,6 +67,16 @@ static int mtk_dvfsrc_stub_probe(struct platform_device *pdev)
 	arm_smccc_smc(MTK_SIP_VCOREFS_CONTROL, VCOREFS_SMC_CMD_START, 0, 0,
 		      0, 0, 0, 0, &res);
 	dev_info(dev, "start: %lx\n", res.a0);
+
+	/*
+	 * Nothing votes for DRAM bandwidth here (the stock display and
+	 * mmqos drivers do), so once the DVFSRC runs it drops DRAM and
+	 * vcore when idle and the display underruns to black. Hold the top
+	 * level, which is what the bootloader left running.
+	 */
+	if (base)
+		writel(readl(base + DVFSRC_SW_REQ) | DVFSRC_SW_REQ_MAX,
+		       base + DVFSRC_SW_REQ);
 	mtk_dvfsrc_stub_dump(dev, base, "after");
 	return 0;
 }
