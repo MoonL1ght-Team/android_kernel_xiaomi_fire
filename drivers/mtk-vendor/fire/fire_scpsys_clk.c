@@ -115,6 +115,14 @@ static int fire_mtcmos_add(struct device *dev, struct device_node *scpsys,
 	if (ret)
 		/* scpsys not registered yet */
 		return ret == -ENOENT ? -EPROBE_DEFER : ret;
+	/*
+	 * Only the clock (that is gpufreq) decides when the MFG domains are
+	 * on. Left to system sleep, genpd powers them off in suspend_noirq
+	 * and back on in resume_noirq before gpufreq has turned VGPU back
+	 * on: the MTCMOS ack times out, the GPU is dead after s2idle and
+	 * the screen stays black.
+	 */
+	dev_pm_syscore_device(&m->pdev->dev, true);
 	pm_runtime_enable(&m->pdev->dev);
 
 	m->hw.init = &init;
