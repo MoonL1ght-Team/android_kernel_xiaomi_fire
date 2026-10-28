@@ -333,16 +333,51 @@ static void fire_hung_scan(void)
 	}
 }
 
+/* grep_prev=1: report matches from the previous boot's console instead */
+static bool grep_prev;
+module_param(grep_prev, bool, 0444);
+
+#define FIRE_PREV_SIZE	SZ_1M
+
+/* next line of the previous boot's console, false at the end */
+static bool fire_prev_line(char *buf, size_t blen, size_t *pos, char *line,
+			   size_t lsize, size_t *len)
+{
+	size_t l = 0;
+
+	if (*pos >= blen)
+		return false;
+	while (*pos < blen && buf[*pos] != '\n') {
+		if (l < lsize - 1)
+			line[l++] = buf[*pos];
+		(*pos)++;
+	}
+	(*pos)++;
+	*len = l;
+	return true;
+}
+
 /* Keeps the last FIRE_GREP_MAX matches, refreshed every FIRE_GREP_PERIOD. */
 static void fire_grep_fn(struct work_struct *work)
 {
 	struct kmsg_dump_iter iter;
 	char line[512], name[FIRE_GREP_NAME + 16];
 	unsigned int n = 0, i, o, first;
-	size_t len;
+	size_t len, ppos = 0;
+	ssize_t plen = 0;
+	char *prev = NULL;
 
+	if (grep_prev) {
+		prev = vmalloc(FIRE_PREV_SIZE);
+		if (prev)
+			plen = fire_read_prev_log("console-ramoops-0", prev,
+						  FIRE_PREV_SIZE);
+		if (plen < 0)
+			plen = 0;
+	}
 	kmsg_dump_rewind(&iter);
-	while (kmsg_dump_get_line(&iter, false, line, sizeof(line) - 1, &len)) {
+	while (prev ? fire_prev_line(prev, plen, &ppos, line, sizeof(line), &len) :
+	       kmsg_dump_get_line(&iter, false, line, sizeof(line) - 1, &len)) {
 		char *dst = fire_grep_lines[n++ % FIRE_GREP_MAX];
 
 		line[len] = 0;
@@ -373,6 +408,7 @@ static void fire_grep_fn(struct work_struct *work)
 		if (IS_ERR(fire_grep_devs[i - first]))
 			fire_grep_devs[i - first] = NULL;
 	}
+	vfree(prev);
 	if (hung_panic)
 		fire_hung_scan();
 	queue_delayed_work(system_unbound_wq, &fire_grep_work,
