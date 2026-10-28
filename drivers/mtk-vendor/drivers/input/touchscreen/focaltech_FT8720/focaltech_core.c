@@ -95,6 +95,16 @@ struct notifier_block fts_psenable_nb;
 *****************************************************************************/
 struct fts_ts_data *fts_data;
 int tp_sensor_flag;
+
+/*
+ * Read by the panel driver when it powers down, as on the stock 6.6
+ * dsi_panel-m19a-42-03-0d module: with the touch proximity sensor on the
+ * panel stays up, with gestures on the bias rails stay up.
+ */
+bool fts_4n_proximity_status;
+EXPORT_SYMBOL(fts_4n_proximity_status);
+bool fts_4n_gesture_status;
+EXPORT_SYMBOL(fts_4n_gesture_status);
 char Tp_name[HARDWARE_MAX_ITEM_LONGTH];
 bool gesture_support;
 
@@ -2182,6 +2192,7 @@ static int fts_ts_suspend(struct device *dev)
     struct fts_ts_data *ts_data = fts_data;
 
     pr_err("fire-touch suspend (suspended=%d)\n", ts_data->suspended);
+    WRITE_ONCE(fts_4n_gesture_status, !!ts_data->gesture_support);
 
     FTS_FUNC_ENTER();
     if (ts_data->suspended) {
@@ -2357,9 +2368,11 @@ static int fts_ps_enable_notifier_callback(struct notifier_block *self,
 	if(fts_ps_state == 1) {
         fts_enter_proximity_mode(1);
         tp_sensor_flag = 1;
+        WRITE_ONCE(fts_4n_proximity_status, true);
         FTS_ERROR("fts_enter_proximity_mode(1)\n");
 	}else if(fts_ps_state == 0) {
         tp_sensor_flag = 0;
+        WRITE_ONCE(fts_4n_proximity_status, false);
         fts_enter_proximity_mode(0);
         FTS_ERROR("fts_enter_proximity_mode(0)\n");
 	}

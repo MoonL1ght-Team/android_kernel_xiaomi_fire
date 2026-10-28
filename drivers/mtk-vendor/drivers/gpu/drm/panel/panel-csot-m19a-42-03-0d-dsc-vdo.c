@@ -380,32 +380,57 @@ static void fire_bl_led_register(struct lcm *ctx)
 	put_device(&pdev->dev);
 }
 
+/* exported by the FT8720/FT8725 touch driver; weak when it is not built */
+extern bool fts_4n_proximity_status __weak;
+extern bool fts_4n_gesture_status __weak;
+
+static bool fire_fts_flag(bool *flag)
+{
+	return flag && READ_ONCE(*flag);
+}
+
 static int lcm_unprepare(struct drm_panel *panel)
 {
 	struct lcm *ctx = panel_to_lcm(panel);
+	bool prox, gest;
 
 	pr_err("fire-panel unprepare (prepared=%d)\n", ctx->prepared);
 
 	if (!ctx->prepared)
 		return 0;
 
-	lcm_cmd2_enable(ctx);
-	lcm_dcs_write_seq_static(ctx, 0x28);
-	msleep(35);
-	lcm_dcs_write_seq_static(ctx, 0x10);
-	msleep(150);
-	/* deep standby */
-	lcm_dcs_write_seq_static(ctx, 0x00, 0x00);
-	lcm_dcs_write_seq_static(ctx, 0xF7, 0x5A, 0xA5, 0x95, 0x27);
-	lcm_cmd2_disable(ctx);
-	msleep(10);
+	/*
+	 * As the stock module: the FT8725 touch keeps working while the
+	 * screen is off for its proximity sensor (leave the panel up) and
+	 * for gestures (deep standby, but keep the bias rails up). Taking
+	 * the rails away under it leaves the chip refusing its firmware
+	 * download on the next power up, with a black screen.
+	 */
+	prox = fire_fts_flag(&fts_4n_proximity_status);
+	gest = fire_fts_flag(&fts_4n_gesture_status);
+	pr_err("fire-panel: proximity %d gesture %d\n", prox, gest);
+
+	if (!prox) {
+		lcm_cmd2_enable(ctx);
+		lcm_dcs_write_seq_static(ctx, 0x28);
+		msleep(35);
+		lcm_dcs_write_seq_static(ctx, 0x10);
+		msleep(150);
+		/* deep standby */
+		lcm_dcs_write_seq_static(ctx, 0x00, 0x00);
+		lcm_dcs_write_seq_static(ctx, 0xF7, 0x5A, 0xA5, 0x95, 0x27);
+		lcm_cmd2_disable(ctx);
+		msleep(10);
+	}
 
 	mutex_lock(&ctx->bl_lock);
 	fire_ktd_off(ctx);
 	mutex_unlock(&ctx->bl_lock);
-	gpiod_set_value(ctx->biasn_gpio, 0);
-	gpiod_set_value(ctx->biasp_gpio, 0);
-	usleep_range(5000, 5100);
+	if (!prox && !gest) {
+		gpiod_set_value(ctx->biasn_gpio, 0);
+		gpiod_set_value(ctx->biasp_gpio, 0);
+		usleep_range(5000, 5100);
+	}
 
 	ctx->error = 0;
 	ctx->prepared = false;
