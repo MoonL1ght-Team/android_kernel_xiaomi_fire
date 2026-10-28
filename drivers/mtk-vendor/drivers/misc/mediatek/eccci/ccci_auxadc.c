@@ -57,23 +57,21 @@ static int ccci_get_adc_info(struct device *dev)
 	}
 	adc_num = md_channel->channel->channel;
 
-	ret = iio_read_channel_raw(md_channel, &val);
-	if (ret < 0) {
-		iio_channel_release(md_channel);
-		CCCI_ERROR_LOG(-1, TAG, "iio_read_channel_raw fail");
-		goto Fail;
-	}
-	adc_val = val;
-
+	/*
+	 * fire: the mainline mt6577 auxadc only reports processed mV, so
+	 * read that and derive the 12-bit raw code (1500 mV full range).
+	 */
 	ret = iio_read_channel_processed(md_channel, &mV);
 	iio_channel_release(md_channel);
 	if (ret < 0) {
-		CCCI_ERROR_LOG(-1, TAG, "iio_read_channel_processed fail");
+		pr_info("fire-auxadc: md channel read failed: %d\n", ret);
 		goto Fail;
 	}
+	val = mV * 4096 / 1500;
+	adc_val = val;
 	adc_mV = mV;
 
-	CCCI_NORMAL_LOG(0, TAG, "md_ch = %d, raw_val = %d[%dmV]\n",
+	pr_info("fire-auxadc: md_ch = %d, raw_val = %d[%dmV]\n",
 		adc_num, val, mV);
 	return ret;
 
