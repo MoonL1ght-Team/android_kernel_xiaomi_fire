@@ -14,6 +14,8 @@
 
 #include <linux/clk-provider.h>
 #include <linux/err.h>
+#include <linux/io.h>
+#include <linux/iopoll.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
@@ -65,8 +67,6 @@ static const struct {
 	unsigned int id;
 	const char *name;
 } fire_mtcmos_domains[] = {
-	/* the modem driver powers MD1 through this clock (SCP_SYS_MD1) */
-	{ MT6768_POWER_DOMAIN_MD, "mtcmos_md1" },
 	{ MT6768_POWER_DOMAIN_MFG, "mtcmos_mfg" },
 	{ MT6768_POWER_DOMAIN_MFG_CORE0, "mtcmos_mfg_core0" },
 	{ MT6768_POWER_DOMAIN_MFG_CORE1, "mtcmos_mfg_core1" },
@@ -126,6 +126,150 @@ static int fire_mtcmos_add(struct device *dev, struct device_node *scpsys,
 	return 0;
 }
 
+/*
+ * MD1 (SCP_SYS_MD1, used by the modem driver as "scp-sys-md1-main"):
+ * the generic scpsys MD ops release reset first and leave the domain
+ * isolated with its clock disabled, so the modem's registers read 0.
+ * Use the stock clk-mt6768-pg sequence (spm_mtcmos_ctrl_md1_pwr and
+ * spm_mtcmos_ctrl_md1_bus_prot) instead.
+ */
+#define FIRE_SPM_BASE		0x10006000
+#define FIRE_INFRACFG_BASE	0x10001000
+#define SPM_POWERON_CONFIG_EN	0x000
+#define  SPM_PROJECT_CODE	0xb16
+#define SPM_PWR_STATUS		0x180
+#define SPM_PWR_STATUS_2ND	0x184
+#define SPM_MD1_PWR_CON		0x320
+#define SPM_MD_SRAM_ISO_CON	0x394
+#define SPM_MD_EXTRA_PWR_CON	0x398
+#define  PWR_RST_B		BIT(0)
+#define  PWR_ISO		BIT(1)
+#define  PWR_ON			BIT(2)
+#define  PWR_ON_2ND		BIT(3)
+#define  PWR_CLK_DIS		BIT(4)
+#define  MD1_SRAM_PDN		BIT(8)
+#define  MD1_PWR_STA		BIT(0)
+#define INFRA_PROTECTEN_SET	0x2a0
+#define INFRA_PROTECTEN_CLR	0x2a4
+#define INFRA_PROTECTEN_STA1	0x228
+#define INFRA_PROTECTEN_1_SET	0x2a8
+#define INFRA_PROTECTEN_1_CLR	0x2ac
+#define INFRA_PROTECTEN_1_STA1	0x258
+#define MD1_PROT_STEP1		BIT(7)
+#define MD1_PROT_STEP2_0	(BIT(3) | BIT(4))
+#define MD1_PROT_STEP2_1	BIT(6)
+
+struct fire_md1 {
+	struct clk_hw hw;
+	void __iomem *spm, *infra;
+	bool on;
+};
+
+#define to_fire_md1(_hw) container_of(_hw, struct fire_md1, hw)
+
+static void fire_md1_rmw(void __iomem *reg, u32 clr, u32 set)
+{
+	writel((readl(reg) & ~clr) | set, reg);
+}
+
+static int fire_md1_prepare(struct clk_hw *hw)
+{
+	struct fire_md1 *m = to_fire_md1(hw);
+	void __iomem *con = m->spm + SPM_MD1_PWR_CON;
+	u32 a, b;
+	int ret;
+
+	writel(SPM_PROJECT_CODE << 16 | BIT(0), m->spm + SPM_POWERON_CONFIG_EN);
+	fire_md1_rmw(con, PWR_RST_B, 0);
+	fire_md1_rmw(con, 0, PWR_ON);
+	fire_md1_rmw(con, 0, PWR_ON_2ND);
+	ret = readl_poll_timeout(m->spm + SPM_PWR_STATUS, a,
+				 (a & MD1_PWR_STA) &&
+				 (readl(m->spm + SPM_PWR_STATUS_2ND) & MD1_PWR_STA),
+				 10, 100000);
+	b = readl(m->spm + SPM_PWR_STATUS_2ND);
+	if (ret) {
+		pr_err("fire-md1: power ack timeout (%#x %#x)\n", a, b);
+		return ret;
+	}
+	fire_md1_rmw(con, MD1_SRAM_PDN, 0);
+	fire_md1_rmw(m->spm + SPM_MD_SRAM_ISO_CON, 0, BIT(0));
+	fire_md1_rmw(con, PWR_ISO, 0);
+	fire_md1_rmw(con, PWR_CLK_DIS, 0);
+	fire_md1_rmw(con, 0, PWR_RST_B);
+	fire_md1_rmw(m->spm + SPM_MD_EXTRA_PWR_CON, BIT(0), 0);
+
+	/* release the bus protection (acks are not checked, as in stock) */
+	writel(MD1_PROT_STEP2_0, m->infra + INFRA_PROTECTEN_CLR);
+	writel(MD1_PROT_STEP2_1, m->infra + INFRA_PROTECTEN_1_CLR);
+	writel(MD1_PROT_STEP1, m->infra + INFRA_PROTECTEN_CLR);
+
+	pr_info("fire-md1: on, PWR_CON %#x\n", readl(con));
+	m->on = true;
+	return 0;
+}
+
+static void fire_md1_unprepare(struct clk_hw *hw)
+{
+	struct fire_md1 *m = to_fire_md1(hw);
+	void __iomem *con = m->spm + SPM_MD1_PWR_CON;
+	u32 v;
+
+	m->on = false;
+	writel(MD1_PROT_STEP1, m->infra + INFRA_PROTECTEN_SET);
+	readl_poll_timeout(m->infra + INFRA_PROTECTEN_STA1, v,
+			   (v & MD1_PROT_STEP1) == MD1_PROT_STEP1, 10, 10000);
+	writel(MD1_PROT_STEP2_0, m->infra + INFRA_PROTECTEN_SET);
+	readl_poll_timeout(m->infra + INFRA_PROTECTEN_STA1, v,
+			   (v & MD1_PROT_STEP2_0) == MD1_PROT_STEP2_0, 10, 10000);
+	writel(MD1_PROT_STEP2_1, m->infra + INFRA_PROTECTEN_1_SET);
+	readl_poll_timeout(m->infra + INFRA_PROTECTEN_1_STA1, v,
+			   (v & MD1_PROT_STEP2_1) == MD1_PROT_STEP2_1, 10, 10000);
+
+	fire_md1_rmw(m->spm + SPM_MD_EXTRA_PWR_CON, 0, BIT(0));
+	fire_md1_rmw(con, 0, PWR_CLK_DIS);
+	fire_md1_rmw(con, 0, PWR_ISO);
+	fire_md1_rmw(m->spm + SPM_MD_SRAM_ISO_CON, BIT(0), 0);
+	fire_md1_rmw(con, 0, MD1_SRAM_PDN);
+	fire_md1_rmw(con, PWR_ON, 0);
+	fire_md1_rmw(con, PWR_ON_2ND, 0);
+}
+
+static int fire_md1_is_prepared(struct clk_hw *hw)
+{
+	return to_fire_md1(hw)->on;
+}
+
+static const struct clk_ops fire_md1_ops = {
+	.prepare = fire_md1_prepare,
+	.unprepare = fire_md1_unprepare,
+	.is_prepared = fire_md1_is_prepared,
+};
+
+static int fire_md1_add(struct device *dev, struct clk_hw **hwp)
+{
+	struct clk_init_data init = {
+		.name = "mtcmos_md1",
+		.ops = &fire_md1_ops,
+	};
+	struct fire_md1 *m;
+	int ret;
+
+	m = devm_kzalloc(dev, sizeof(*m), GFP_KERNEL);
+	if (!m)
+		return -ENOMEM;
+	m->spm = devm_ioremap(dev, FIRE_SPM_BASE, 0x1000);
+	m->infra = devm_ioremap(dev, FIRE_INFRACFG_BASE, 0x1000);
+	if (!m->spm || !m->infra)
+		return -ENOMEM;
+	m->hw.init = &init;
+	ret = devm_clk_hw_register(dev, &m->hw);
+	if (ret)
+		return ret;
+	*hwp = &m->hw;
+	return 0;
+}
+
 static int fire_scpsys_clk_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -155,6 +299,10 @@ static int fire_scpsys_clk_probe(struct platform_device *pdev)
 		if (ret)
 			goto out;
 	}
+
+	ret = fire_md1_add(dev, &data->hws[MT6768_POWER_DOMAIN_MD]);
+	if (ret)
+		goto out;
 
 	ret = devm_of_clk_add_hw_provider(dev, of_clk_hw_onecell_get, data);
 out:
