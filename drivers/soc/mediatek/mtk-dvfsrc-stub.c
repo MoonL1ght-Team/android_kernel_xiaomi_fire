@@ -19,12 +19,14 @@
 #include <linux/io.h>
 #include <linux/mod_devicetable.h>
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/platform_device.h>
 
 #define MTK_SIP_SPM_DVFSRC_INIT		0xc200022a
 #define MTK_SIP_VCOREFS_CONTROL		0xc2000506
 #define  VCOREFS_SMC_CMD_INIT		0
 #define  VCOREFS_SMC_CMD_START		1
+#define  VCOREFS_SMC_CMD_DRAM_FREQ	0x10
 
 /* DVFSRC_SW_REQ (stock mt6768_regs): DRAM level 1:0, vcore level 3:2 */
 #define DVFSRC_SW_REQ			0x4
@@ -47,7 +49,9 @@ static int mtk_dvfsrc_stub_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct arm_smccc_res res;
+	struct device_node *np;
 	void __iomem *base;
+	int cnt, i;
 
 	base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(base))
@@ -57,6 +61,26 @@ static int mtk_dvfsrc_stub_probe(struct platform_device *pdev)
 		dev_info(dev, "using bootloader DVFSRC configuration\n");
 		return 0;
 	}
+
+	/*
+	 * As dvfsrc-opp-mt6768: give ATF the DRAM rate of each DFS step
+	 * (freq_step, filled into the dramc node by LK) before the SPM
+	 * firmware init. The modem's DSP votes for these levels.
+	 */
+	np = of_find_compatible_node(NULL, NULL, "mediatek,common-dramc");
+	cnt = np ? of_property_count_u32_elems(np, "freq_step") : -ENODEV;
+	for (i = 0; i < cnt && i < 8; i++) {
+		u32 freq;
+
+		if (of_property_read_u32_index(np, "freq_step", i, &freq))
+			break;
+		arm_smccc_smc(MTK_SIP_VCOREFS_CONTROL, VCOREFS_SMC_CMD_DRAM_FREQ,
+			      i, freq, 0, 0, 0, 0, &res);
+		dev_info(dev, "dram step %d: %u (%lx)\n", i, freq, res.a0);
+	}
+	if (cnt <= 0)
+		dev_info(dev, "no freq_step in the dramc node (%d)\n", cnt);
+	of_node_put(np);
 
 	arm_smccc_smc(MTK_SIP_SPM_DVFSRC_INIT, 0, spmfw_idx, 0, 0, 0, 0, 0,
 		      &res);
