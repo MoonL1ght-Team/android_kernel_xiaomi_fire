@@ -217,6 +217,47 @@ static void fire_debug_reboot_fn(struct work_struct *work)
 
 static DECLARE_DELAYED_WORK(fire_debug_reboot_work, fire_debug_reboot_fn);
 
+/*
+ * clear_bcb=1: wipe a pending bootloader command (the first 32 bytes of
+ * misc, e.g. "boot-recovery") that keeps the stock kernel in recovery.
+ */
+static bool clear_bcb;
+module_param(clear_bcb, bool, 0444);
+
+static void fire_clear_bcb_fn(struct work_struct *work);
+static DECLARE_DELAYED_WORK(fire_clear_bcb_work, fire_clear_bcb_fn);
+
+static void fire_clear_bcb_fn(struct work_struct *work)
+{
+	static unsigned int tries;
+	struct file *bdev_file;
+	struct device *dev;
+	char cmd[32] = {};
+	loff_t pos = 0;
+
+	dev = class_find_device(&block_class, NULL, "misc", fire_match_part);
+	if (!dev) {
+		if (++tries < FIRE_SAVE_RETRIES)
+			queue_delayed_work(system_unbound_wq,
+					   &fire_clear_bcb_work, HZ / 4);
+		return;
+	}
+	bdev_file = bdev_file_open_by_dev(dev->devt,
+					  BLK_OPEN_READ | BLK_OPEN_WRITE,
+					  NULL, NULL);
+	if (!IS_ERR(bdev_file)) {
+		kernel_read(bdev_file, cmd, sizeof(cmd) - 1, &pos);
+		pr_info("fire-bcb: command was '%.31s'\n", cmd);
+		memset(cmd, 0, sizeof(cmd));
+		pos = 0;
+		kernel_write(bdev_file, cmd, sizeof(cmd), &pos);
+		sync_blockdev(file_bdev(bdev_file));
+		fput(bdev_file);
+		pr_info("fire-bcb: cleared\n");
+	}
+	put_device(dev);
+}
+
 static int __init fire_debug_reboot_init(void)
 {
 	char *mode;
@@ -231,6 +272,9 @@ static int __init fire_debug_reboot_init(void)
 
 	if (save_prev)
 		queue_delayed_work(system_unbound_wq, &fire_save_prev_work,
+				   HZ / 2);
+	if (clear_bcb)
+		queue_delayed_work(system_unbound_wq, &fire_clear_bcb_work,
 				   HZ / 2);
 	if (delay) {
 		pr_info("fire-debug-reboot: panicking in %u s\n", delay);
