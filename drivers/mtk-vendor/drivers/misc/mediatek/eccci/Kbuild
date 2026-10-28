@@ -11,6 +11,10 @@ subdir-ccflags-y += -Wno-error -DCCCI_KMODULE_ENABLE \
 	-I$(M_)/pbm/ -I$(M_)/slbc/ -I$(M_)/memory-amms \
 	-I$(M_)/clkbuf/src -I$(DEVICE_MODULES_PATH)/drivers/clk/mediatek
 
+# MD1 MTCMOS comes from the scp-sys-md1-main clock (fire_scpsys_clk), as
+# with the vendor legacy power gating, not from runtime PM.
+subdir-ccflags-y += -DCONFIG_COMMON_CLK_PG_LEGACY=1
+
 obj-y += ccci_md_all.o ccci_auxadc.o
 ccci_md_all-y := ccci_core.o ccci_bm.o ccci_modem.o udc/udc.o hif/ccci_hif.o \
 	port/port_cfg.o port/port_char.o port/port_ctlmsg.o port/port_udc.o \

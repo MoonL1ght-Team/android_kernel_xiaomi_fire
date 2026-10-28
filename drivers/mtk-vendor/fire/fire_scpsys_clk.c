@@ -65,6 +65,8 @@ static const struct {
 	unsigned int id;
 	const char *name;
 } fire_mtcmos_domains[] = {
+	/* the modem driver powers MD1 through this clock (SCP_SYS_MD1) */
+	{ MT6768_POWER_DOMAIN_MD, "mtcmos_md1" },
 	{ MT6768_POWER_DOMAIN_MFG, "mtcmos_mfg" },
 	{ MT6768_POWER_DOMAIN_MFG_CORE0, "mtcmos_mfg_core0" },
 	{ MT6768_POWER_DOMAIN_MFG_CORE1, "mtcmos_mfg_core1" },
