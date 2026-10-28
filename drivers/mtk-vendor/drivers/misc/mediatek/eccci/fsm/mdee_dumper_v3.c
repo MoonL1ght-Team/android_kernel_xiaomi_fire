@@ -296,6 +296,22 @@ static void mdee_info_dump_v3(struct ccci_fsm_ee *mdee)
 			debug_info->ELM_status);/* ELM status */
 	}
 
+	/* fire: no AEE here, so put the exception text in kmsg */
+	{
+		char *p = ex_info, *nl;
+
+		while (p && *p) {
+			nl = strchr(p, '\n');
+			if (nl)
+				*nl = 0;
+			if (*p)
+				pr_info("fire-mdee: %s\n", p);
+			if (!nl)
+				break;
+			*nl = '\n';
+			p = nl + 1;
+		}
+	}
 	CCCI_MEM_LOG_TAG(0, FSM, "Dump MD EX log, 0x%x, 0x%x\n",
 		dumper->more_info, debug_info->par_data_source);
 	if (debug_info->par_data_source == MD_EE_DATA_IN_GPD) {
