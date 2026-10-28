@@ -91,6 +91,10 @@ static bool no_charger;
 module_param(no_charger, bool, 0444);
 MODULE_PARM_DESC(no_charger, "Boot Android instead of the off-mode charger");
 
+static bool hung_kthreads;
+module_param(hung_kthreads, bool, 0444);
+MODULE_PARM_DESC(hung_kthreads, "Let hung_panic also catch kernel threads");
+
 static bool nosuspend;
 module_param(nosuspend, bool, 0444);
 MODULE_PARM_DESC(nosuspend, "Keep the system from suspending");
@@ -285,8 +289,12 @@ static void fire_hung_scan(void)
 		 * Only user tasks: some vendor kthreads (cmdq_buffer_usage,
 		 * disp_echk) idle in D state on a healthy system.
 		 */
-		if (READ_ONCE(t->__state) != TASK_UNINTERRUPTIBLE ||
-		    (t->flags & PF_KTHREAD))
+		if (READ_ONCE(t->__state) != TASK_UNINTERRUPTIBLE)
+			continue;
+		if ((t->flags & PF_KTHREAD) &&
+		    (!hung_kthreads || !strcmp(t->comm, "cmdq_buffer_usage") ||
+		     !strcmp(t->comm, "disp_echk") || !strcmp(t->comm, "ccci_poll") ||
+		     !strncmp(t->comm, "kworker", 7)))
 			continue;
 		free_slot = FIRE_HUNG_SLOTS;
 		for (i = 0; i < FIRE_HUNG_SLOTS; i++) {
