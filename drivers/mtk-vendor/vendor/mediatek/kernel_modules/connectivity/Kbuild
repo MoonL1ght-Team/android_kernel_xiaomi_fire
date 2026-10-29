@@ -13,6 +13,7 @@ export CONFIG_WLAN_DRV_BUILD_IN := y
 export CONFIG_MTK_COMBO_WIFI := y
 
 subdir-ccflags-y += -DMTK_WCN_REMOVE_KERNEL_MODULE -DMTK_WCN_BUILT_IN_DRIVER
+subdir-ccflags-y += -I$(DEVICE_MODULES_PATH)/include
 subdir-ccflags-y += -Wno-error -Wno-unused-but-set-variable -Wno-unused-variable
 
 obj-y += common/

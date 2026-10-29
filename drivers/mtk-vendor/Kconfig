@@ -141,6 +141,9 @@ config MTK_COMBO_BT
 config MTK_COMBO_GPS
 	def_bool FIRE_MTK_CONN
 
+config MTK_EMI_LEGACY
+	def_bool FIRE_MTK_CONN
+
 config MTK_PMIC_CHIP_MT6358
 	def_bool FIRE_MTK_CONN
 

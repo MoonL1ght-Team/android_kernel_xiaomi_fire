@@ -1,3 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0
 KO_CODE_PATH := $(if $(filter /%,$(src)),,$(srctree)/)$(src)
+# fire: lets plat/mt6768 open the Wi-Fi EMI region (CONFIG_WLAN_MTK_EMI)
+CONFIG_MTK_EMI := y
 include $(KO_CODE_PATH)/Kbuild.6768
