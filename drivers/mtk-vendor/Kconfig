@@ -118,6 +118,32 @@ config FIRE_CHARGER
 	  Programs the stock limits into the SYV690 (BQ25890 compatible),
 	  turns off its I2C watchdog and reports charging to the battery.
 
+config FIRE_MTK_CONN
+	bool "MediaTek CONNAC1 connectivity (WMT, Wi-Fi gen4m, BT) for MT6768"
+	depends on ARCH_MEDIATEK && FIRE_MTK_CCCI && CFG80211
+	help
+	  The kernel_modules-6.6 connectivity stack (btif, conn_md, connadp,
+	  wmt_drv, wmt_chrdev_wifi, wlan_drv_gen4m_6768, bt_drv_connac1x),
+	  built in.
+
+config MTK_BTIF
+	def_bool FIRE_MTK_CONN
+
+config MTK_COMBO
+	def_bool FIRE_MTK_CONN
+
+config MTK_CONN_MD
+	def_bool FIRE_MTK_CONN
+
+config MTK_COMBO_BT
+	def_bool FIRE_MTK_CONN
+
+config MTK_COMBO_GPS
+	def_bool FIRE_MTK_CONN
+
+config MTK_PMIC_CHIP_MT6358
+	def_bool FIRE_MTK_CONN
+
 config FIRE_MTK_CCCI
 	bool "MediaTek CCCI modem interface (eccci, ccci_util, ccmni)"
 	depends on ARCH_MEDIATEK && NET

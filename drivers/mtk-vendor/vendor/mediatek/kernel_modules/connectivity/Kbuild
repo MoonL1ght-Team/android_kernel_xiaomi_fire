@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: GPL-2.0
+# fire: the MTK CONNAC1 connectivity stack (WMT, Wi-Fi gen4m, BT) of
+# kernel_modules-6.6 for MT6768 + MT6631, built into the kernel.
+export TOP := $(abspath $(srctree)/drivers/mtk-vendor)
+export DEVICE_MODULES_PATH := $(abspath $(srctree)/drivers/mtk-vendor)
+export MTK_PLATFORM := mt6768
+export TARGET_BOARD_PLATFORM_WMT := mt6768
+export MTK_CONSYS_ADIE := MT6631
+export BT_PLATFORM := connac1x
+export CONNAC_VER := 1_0
+export TARGET_BUILD_VARIANT := user
+export CONFIG_WLAN_DRV_BUILD_IN := y
+export CONFIG_MTK_COMBO_WIFI := y
+
+subdir-ccflags-y += -DMTK_WCN_REMOVE_KERNEL_MODULE -DMTK_WCN_BUILT_IN_DRIVER
+subdir-ccflags-y += -Wno-error -Wno-unused-but-set-variable -Wno-unused-variable
+
+obj-y += common/
+obj-y += wlan/adaptor/
+obj-y += wlan/core/gen4m/
+obj-y += bt/mt66xx/wmt/

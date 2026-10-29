@@ -1,0 +1,12 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+/* fire: no vendor low battery throttling; CONFIG_MTK_LOW_BATTERY_POWER_THROTTLING is off */
+#ifndef __FIRE_STUB_MTK_LBAT_H
+#define __FIRE_STUB_MTK_LBAT_H
+enum LOW_BATTERY_LEVEL_TAG {
+	LOW_BATTERY_LEVEL_0 = 0,
+	LOW_BATTERY_LEVEL_1,
+	LOW_BATTERY_LEVEL_2,
+	LOW_BATTERY_LEVEL_3,
+	LOW_BATTERY_LEVEL_NUM,
+};
+#endif

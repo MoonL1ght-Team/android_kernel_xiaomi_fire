@@ -22,3 +22,7 @@ obj-$(CONFIG_FIRE_I2C_MT65XX_VENDOR) += drivers/i2c/
 obj-$(CONFIG_FIRE_MTK_CCCI) += drivers/misc/mediatek/ccci_util/
 obj-$(CONFIG_FIRE_MTK_CCCI) += drivers/misc/mediatek/ccmni/
 obj-$(CONFIG_FIRE_MTK_CCCI) += drivers/misc/mediatek/eccci/
+obj-$(CONFIG_FIRE_MTK_CONN) += drivers/misc/mediatek/btif/
+obj-$(CONFIG_FIRE_MTK_CONN) += drivers/misc/mediatek/conn_md/
+obj-$(CONFIG_FIRE_MTK_CONN) += drivers/misc/mediatek/connectivity/
+obj-$(CONFIG_FIRE_MTK_CONN) += vendor/mediatek/kernel_modules/connectivity/

@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0
+subdir-ccflags-y += -I$(srctree)/drivers/mmc/core -I$(srctree)
+ccflags-y += -I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/include/mt-plat \
+	-I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/eccci/ \
+	-I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/clkbuf/src \
+	-I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/power_throttling/ \
+	-I$(DEVICE_MODULES_PATH)/drivers/misc/mediatek/include/fire_stub \
+	-D CFG_CONNADP_BUILD_IN -Wno-error
+obj-y += connadp.o
+connadp-objs := common/connectivity_build_in_adapter.o \
+	common/wmt_build_in_adapter.o \
+	power_throttling/adapter.o power_throttling/core.o
