@@ -70,6 +70,8 @@
 #include <linux/regulator/consumer.h>
 #if (COMMON_KERNEL_PMIC_SUPPORT)
 #include <linux/mfd/mt6397/core.h>
+#include <linux/of.h>
+#include <linux/of_platform.h>
 #include <linux/regmap.h>
 #else
 #include <upmu_common.h>
@@ -123,6 +125,11 @@ static INT32 consys_emi_mpu_set_region_protection(VOID);
 static UINT32 consys_emi_set_remapping_reg(VOID);
 static INT32 bt_wifi_share_v33_spin_lock_init(VOID);
 static INT32 consys_clk_get_from_dts(struct platform_device *pdev);
+static const char *rdev_get_name_safe(struct regulator *r)
+{
+	return regulator_is_enabled(r) >= 0 ? "ok" : "?";
+}
+
 static INT32 consys_pmic_get_from_dts(struct platform_device *pdev);
 static INT32 consys_read_irq_info_from_dts(struct platform_device *pdev, PINT32 irq_num, PUINT32 irq_flag);
 static INT32 consys_read_reg_from_dts(struct platform_device *pdev);
@@ -195,6 +202,33 @@ static struct regulator *reg_VCN33_BT;
 static struct regulator *reg_VCN33_WIFI;
 #if (COMMON_KERNEL_PMIC_SUPPORT)
 struct regmap *g_regmap_mt6358;
+
+/*
+ * fire: the mainline mt6397 core does not create the PMIC's
+ * "mediatek,mt6358-consys" child, so consys_pmic_mt6358_probe() never
+ * runs. Take the PMIC regmap from the PMIC device itself.
+ */
+static struct regmap *fire_consys_pmic_regmap(void)
+{
+	struct platform_device *pmic;
+	struct device_node *np;
+	struct mt6397_chip *chip;
+
+	if (g_regmap_mt6358)
+		return g_regmap_mt6358;
+	np = of_find_compatible_node(NULL, NULL, "mediatek,mt6358");
+	pmic = np ? of_find_device_by_node(np) : NULL;
+	of_node_put(np);
+	if (!pmic)
+		return NULL;
+	chip = platform_get_drvdata(pmic);
+	if (chip)
+		g_regmap_mt6358 = chip->regmap;
+	put_device(&pmic->dev);
+	if (g_regmap_mt6358)
+		WMT_PLAT_PR_INFO("fire: got the mt6358 regmap from the PMIC\n");
+	return g_regmap_mt6358;
+}
 #endif
 #endif
 
@@ -573,7 +607,7 @@ static int consys_pmic_mt6358_probe(struct platform_device *pdev)
 	}
 
 	g_regmap_mt6358 = mt6397->regmap;
-	if (!g_regmap_mt6358) {
+	if (!fire_consys_pmic_regmap()) {
 		WMT_PLAT_PR_INFO("%s mt6397->regmap is NULL\n", __func__);
 		return -1;
 	}
@@ -592,12 +626,24 @@ static INT32 consys_pmic_get_from_dts(struct platform_device *pdev)
 	reg_VCN28 = regulator_get(&pdev->dev, "vcn28");
 	if (!reg_VCN28)
 		WMT_PLAT_PR_ERR("Regulator_get VCN_2V8 fail\n");
-	reg_VCN33_BT = regulator_get(&pdev->dev, "vcn33_bt");
-	if (!reg_VCN33_BT)
+	/*
+	 * fire: mainline mt6358 has one "VCN33" regulator instead of the
+	 * vendor vcn33_bt/vcn33_wifi pair; a plain regulator_get() of the
+	 * old names hands back a dummy and the Wi-Fi/BT PA stays unpowered.
+	 */
+	reg_VCN33_BT = regulator_get_optional(&pdev->dev, "vcn33_bt");
+	if (IS_ERR(reg_VCN33_BT))
+		reg_VCN33_BT = regulator_get(&pdev->dev, "VCN33");
+	if (IS_ERR_OR_NULL(reg_VCN33_BT))
 		WMT_PLAT_PR_ERR("Regulator_get VCN33_BT fail\n");
-	reg_VCN33_WIFI = regulator_get(&pdev->dev, "vcn33_wifi");
-	if (!reg_VCN33_WIFI)
+	reg_VCN33_WIFI = regulator_get_optional(&pdev->dev, "vcn33_wifi");
+	if (IS_ERR(reg_VCN33_WIFI))
+		reg_VCN33_WIFI = regulator_get(&pdev->dev, "VCN33");
+	if (IS_ERR_OR_NULL(reg_VCN33_WIFI))
 		WMT_PLAT_PR_ERR("Regulator_get VCN33_WIFI fail\n");
+	WMT_PLAT_PR_INFO("fire: VCN33 bt %s wifi %s\n",
+			 IS_ERR_OR_NULL(reg_VCN33_BT) ? "-" : rdev_get_name_safe(reg_VCN33_BT),
+			 IS_ERR_OR_NULL(reg_VCN33_WIFI) ? "-" : rdev_get_name_safe(reg_VCN33_WIFI));
 #endif
 	return 0;
 }
@@ -1000,7 +1046,7 @@ static INT32 consys_hw_vcn18_ctrl(MTK_WCN_BOOL enable)
 		/*1.AP power on VCN_1V8 LDO (with PMIC_WRAP API) VCN_1V8  */
 		/*set vcn18 SW mode*/
 #if (COMMON_KERNEL_PMIC_SUPPORT)
-		if (g_regmap_mt6358)
+		if (fire_consys_pmic_regmap())
 			regmap_write(g_regmap_mt6358, PMIC_RG_LDO_VCN18_OP_EN_SET_ADDR, 1);
 		else
 			WMT_PLAT_PR_INFO("failed to get regmap\n");
@@ -1017,7 +1063,7 @@ static INT32 consys_hw_vcn18_ctrl(MTK_WCN_BOOL enable)
 
 		if (!(wmt_lib_get_ext_ldo())) {
 #if (COMMON_KERNEL_PMIC_SUPPORT)
-		if (g_regmap_mt6358)
+		if (fire_consys_pmic_regmap())
 			regmap_write(g_regmap_mt6358, PMIC_RG_LDO_VCN33_OP_EN_SET_ADDR, 1);
 		else
 			WMT_PLAT_PR_INFO("failed to get regmap\n");
@@ -1026,9 +1072,22 @@ static INT32 consys_hw_vcn18_ctrl(MTK_WCN_BOOL enable)
 			KERNEL_upmu_set_reg_value(MT6358_LDO_VCN33_OP_EN, 0x1);
 #endif
 			if (reg_VCN33_BT) {
-				regulator_set_voltage(reg_VCN33_BT, 3300000, 3300000);
-				if (regulator_enable(reg_VCN33_BT))
-					WMT_PLAT_PR_ERR("WMT do BT PMIC on fail!\n");
+				int vret, eret;
+
+				vret = regulator_set_voltage(reg_VCN33_BT, 3300000, 3300000);
+				eret = regulator_enable(reg_VCN33_BT);
+				if (eret)
+					WMT_PLAT_PR_ERR("WMT do BT PMIC on fail! (set %d enable %d)\n",
+							vret, eret);
+				/*
+				 * fire: make sure VCN33 is on either way: its
+				 * BT and Wi-Fi enable bits (LDO_VCN33_CON0_0/_1).
+				 */
+				if (eret && fire_consys_pmic_regmap()) {
+					regmap_update_bits(g_regmap_mt6358, 0x1d1c, 1, 1);
+					regmap_update_bits(g_regmap_mt6358, 0x1d2a, 1, 1);
+					WMT_PLAT_PR_INFO("fire: VCN33 forced on\n");
+				}
 			}
 		} else
 			WMT_PLAT_PR_INFO("VCN33 uses external LDO!\n");
@@ -1056,7 +1115,7 @@ static VOID consys_vcn28_hw_mode_ctrl(UINT32 enable)
 #if (COMMON_KERNEL_PMIC_SUPPORT)
 	int val = enable ? 1 : 0;
 
-	if (!g_regmap_mt6358) {
+	if (!fire_consys_pmic_regmap()) {
 		WMT_PLAT_PR_INFO("failed to get g_regmap_mt6358\n");
 		return;
 	}
@@ -1191,8 +1250,14 @@ static INT32 consys_hw_wifi_vcn33_ctrl(UINT32 enable)
 #if CONSYS_PMIC_CTRL_ENABLE
 		if (reg_VCN33_WIFI) {
 			regulator_set_voltage(reg_VCN33_WIFI, 3300000, 3300000);
-			if (regulator_enable(reg_VCN33_WIFI))
+			if (regulator_enable(reg_VCN33_WIFI)) {
 				WMT_PLAT_PR_ERR("WMT do WIFI PMIC on fail!\n");
+				if (fire_consys_pmic_regmap()) {
+					regmap_update_bits(g_regmap_mt6358, 0x1d1c, 1, 1);
+					regmap_update_bits(g_regmap_mt6358, 0x1d2a, 1, 1);
+					WMT_PLAT_PR_INFO("fire: VCN33 forced on (wifi)\n");
+				}
+			}
 		}
 		KERNEL_pmic_set_register_value(PMIC_RG_LDO_VCN33_HW0_OP_EN, 1);
 		KERNEL_pmic_set_register_value(PMIC_RG_LDO_VCN33_HW0_OP_CFG, 0);
