@@ -851,9 +851,15 @@ int ccci_md_start(void)
 
 	return md->ops->start(md);
 }
+void __weak md1_pmic_vmodem_restore(void)
+{
+}
+
 int ccci_md_post_start(void)
 {
 	struct ccci_modem *md = ccci_get_modem();
+
+	md1_pmic_vmodem_restore();
 
 	if (md->hw_info->plat_ptr->vcore_config)
 		return md->hw_info->plat_ptr->vcore_config(0);

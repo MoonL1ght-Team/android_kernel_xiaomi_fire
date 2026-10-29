@@ -218,5 +218,6 @@ int ccci_md_stop(unsigned int stop_type);
 int ccci_md_soft_stop(unsigned int sim_mode);
 int ccci_md_pre_start(void);
 int ccci_md_post_start(void);
+void md1_pmic_vmodem_restore(void);
 
 #endif	/* __CCCI_MODEM_H__ */

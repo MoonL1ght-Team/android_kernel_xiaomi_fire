@@ -1722,6 +1722,30 @@ static int md_cd_vcore_config_old (unsigned int hold_req)
 	return ret;
 }
 
+/*
+ * fire: during MD1 boot something drops the VMODEM buck to VOSEL 0 (off)
+ * after md1_pmic_setting_on(), and the modem then runs but never finds a
+ * cell. Stock ends up at a sane VMODEM; write md-vmodem again once the
+ * modem has booted. regulator_sync_voltage() forces the register write
+ * even though the requested range did not change.
+ */
+void md1_pmic_vmodem_restore(void)
+{
+	int idx, uv;
+
+	for (idx = 0; idx < ARRAY_SIZE(md_reg_table); idx++) {
+		if (strcmp(md_reg_table[idx].reg_name, "md-vmodem") ||
+		    IS_ERR_OR_NULL(md_reg_table[idx].reg_ref))
+			continue;
+		uv = regulator_get_voltage(md_reg_table[idx].reg_ref);
+		if (uv >= md_reg_table[idx].reg_vol0)
+			return;
+		regulator_sync_voltage(md_reg_table[idx].reg_ref);
+		CCCI_NORMAL_LOG(-1, TAG, "md-vmodem was %d uV, restored %d uV\n",
+			uv, regulator_get_voltage(md_reg_table[idx].reg_ref));
+	}
+}
+
 int md_cd_vcore_config(unsigned int hold_req)
 {
 	static int is_hold;
